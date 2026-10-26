@@ -1,0 +1,497 @@
+Обнови функцию выгрузки отчёта по кнопке «📥 Выгрузить отчёт», чтобы файл формировался строго по стандарту нашего localhost с 3 РАЗДЕЛЬНЫМИ ВКЛАДКАМИ (Worksheet) и текст больше НИГДЕ НЕ СЪЕДАЛСЯ.
+
+Требования к оформлению:
+1. Книга Excel должна содержать ровно 3 вкладки:
+   - Вкладка 1: «Справка по вагонам» (или «Справка по вагонам (Холдинг)», если выбран ALL)
+   - Вкладка 2: «Пономерная ситуация» (или «Пономерная ситуация (Холдинг)», если выбран ALL)
+   - Вкладка 3: «Колесные пары» (или «Колесные пары (Холдинг)», если выбран ALL)
+2. Текст не должен съедаться:
+   - Включить ss:WrapText="1" на стилях TableCellLeft, TableCellBoldLeft и KpLabelCell.
+   - Увеличить ширину колонок: Вид ремонта (160 px), Раздел/Статус (210 px), Заказчик (240 px), Причина/Примечание (320 px), Подкатка КП (240 px), Ремфонд (220 px).
+   - На строках с вагонами не задавать фиксированный ss:Height, чтобы Excel сам адаптировал высоту строк под многострочный текст примечаний.
+
+Замени обработчик кнопки «📥 Выгрузить отчёт» на функцию:
+
+```javascript
+function handleExportReportClick() {
+  const escapeXml = (str) => {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  };
+
+  const dateInput = document.getElementById('inputDate');
+  const reportDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+  const depot = typeof currentDepot !== 'undefined' ? currentDepot : 'ALL';
+  const isCorp = (depot === 'ALL');
+  const depotName = isCorp 
+    ? 'Холдинг АРС (все филиалы)' 
+    : ((typeof DEPOT_LABELS !== 'undefined' && DEPOT_LABELS[depot]) ? DEPOT_LABELS[depot] : depot);
+
+  // Названия 3 вкладок строго как на localhost
+  const sheet1Name = isCorp ? 'Справка по вагонам (Холдинг)' : 'Справка по вагонам';
+  const sheet2Name = isCorp ? 'Пономерная ситуация (Холдинг)' : 'Пономерная ситуация';
+  const sheet3Name = isCorp ? 'Колесные пары (Холдинг)' : 'Колесные пары';
+
+  // 1. Сбор данных матрицы ремонтов
+  const matrixRows = [];
+  const matrixTrs = document.querySelectorAll('#branchMatrixBody tr, .branch-matrix-table tbody tr');
+  matrixTrs.forEach(tr => {
+    const cells = tr.querySelectorAll('td');
+    if (cells.length >= 8) {
+      matrixRows.push({
+        rep: cells[0]?.textContent?.trim() || '',
+        w_ktt: cells[1]?.textContent?.trim() || '0',
+        w_own: cells[2]?.textContent?.trim() || '0',
+        w_sub: cells[3]?.textContent?.trim() || '0',
+        d_ktt: cells[4]?.textContent?.trim() || '0',
+        d_own: cells[5]?.textContent?.trim() || '0',
+        d_sub: cells[6]?.textContent?.trim() || '0',
+        grand: cells[7]?.textContent?.trim() || '0'
+      });
+    }
+  });
+
+  const tfootTr = document.querySelector('#branchMatrixFoot tr, .branch-matrix-table tfoot tr');
+  let totals = { w_ktt: '0', w_own: '0', w_sub: '0', d_ktt: '0', d_own: '0', d_sub: '0', grand: '0' };
+  if (tfootTr) {
+    const fCells = tfootTr.querySelectorAll('td');
+    if (fCells.length >= 8) {
+      totals = {
+        w_ktt: fCells[1]?.textContent?.trim() || '0',
+        w_own: fCells[2]?.textContent?.trim() || '0',
+        w_sub: fCells[3]?.textContent?.trim() || '0',
+        d_ktt: fCells[4]?.textContent?.trim() || '0',
+        d_own: fCells[5]?.textContent?.trim() || '0',
+        d_sub: fCells[6]?.textContent?.trim() || '0',
+        grand: fCells[7]?.textContent?.trim() || '0'
+      };
+    }
+  }
+
+  // 2. Сбор пономерных вагонов
+  const wagonRows = [];
+  document.querySelectorAll('#wagonsBody tr, .situation-table tbody tr').forEach((tr, idx) => {
+    const secSelect = tr.querySelector('.row-section, select');
+    const status = secSelect ? secSelect.options[secSelect.selectedIndex]?.text : (tr.children[1]?.textContent?.trim() || '');
+    const cust = tr.querySelector('.row-cust, input[list="cust-list"]')?.value?.trim() || tr.children[2]?.textContent?.trim() || '';
+    const num = tr.querySelector('.row-wagon')?.value?.trim() || tr.children[3]?.textContent?.trim() || '';
+    const typeSelect = tr.querySelector('.row-wagon-type');
+    const type = typeSelect ? typeSelect.value : (tr.children[4]?.textContent?.trim() || '');
+    const repSelect = tr.querySelector('.row-repair');
+    const repair = repSelect ? repSelect.value : (tr.children[5]?.textContent?.trim() || '');
+    const date = tr.querySelector('.row-date')?.value?.trim() || tr.children[6]?.textContent?.trim() || '';
+    const loc = tr.querySelector('.row-loc')?.value?.trim() || tr.children[7]?.textContent?.trim() || '';
+    const reason = tr.querySelector('.row-reason')?.value?.trim() || tr.children[8]?.textContent?.trim() || '';
+    const dCode = tr.getAttribute('data-depot') || depot;
+
+    if (num || cust || status) {
+      wagonRows.push({ idx: idx + 1, depot: dCode, status, cust, num, type, repair, date, loc, reason });
+    }
+  });
+
+  // 3. Сбор колёсных пар (КП)
+  const getKp = (id, stateKey) => {
+    const el = document.getElementById(id);
+    if (el && el.value !== '') return parseInt(el.value, 10) || 0;
+    if (typeof currentReportData !== 'undefined' && currentReportData?.wheel_pairs) {
+      return parseInt(currentReportData.wheel_pairs[stateKey], 10) || 0;
+    }
+    return 0;
+  };
+
+  const kpRoll = [
+    { label: 'НОНК (новые колёсные пары)', val: getKp('kp_nonk', 'nonk') },
+    { label: 'СОНК (старые оси, новые колёса)', val: getKp('kp_sonk', 'sonk') },
+    { label: 'Средний ремонт (с обточкой)', val: getKp('kp_sr_ob', 'sr_ob') },
+    { label: 'Текущий ремонт (с обточкой)', val: getKp('kp_tr_ob', 'tr_ob') },
+    { label: 'Средний ремонт (без обточки)', val: getKp('kp_sr_bez', 'sr_bez') },
+    { label: 'Текущий ремонт (без обточки)', val: getKp('kp_tr_bez', 'tr_bez') }
+  ];
+
+  const kpStock = [
+    { label: 'ЦКК АО "КТТ"', val: getKp('stock_ckk_ktt', 'stock_ckk_ktt') },
+    { label: 'СОНК "КТТ"', val: getKp('stock_sonk_ktt', 'stock_sonk_ktt') },
+    { label: 'ЦКК (KTZ Express)', val: getKp('stock_ckk_ktz', 'stock_ckk_ktz') },
+    { label: 'СОНК (KTZ Express)', val: getKp('stock_sonk_ktz', 'stock_sonk_ktz') },
+    { label: 'Ремфонд осей под КР', val: getKp('stock_rem_ktt', 'stock_rem_ktt') }
+  ];
+
+  const totKpRoll = kpRoll.reduce((acc, it) => acc + it.val, 0);
+  const totKpStock = kpStock.reduce((acc, it) => acc + it.val, 0);
+
+  // Сборка XML SpreadsheetML
+  let xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:x="urn:schemas-microsoft-com:office:excel">
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Alignment ss:Vertical="Center"/>
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000"/>
+    </Style>
+    <Style ss:ID="HeaderTitle">
+      <Font ss:FontName="Calibri" ss:Size="13" ss:Bold="1" ss:Color="#1B365D"/>
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+    </Style>
+    <Style ss:ID="ThDark">
+      <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <Interior ss:Color="#1B365D" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F223D"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F223D"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F223D"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F223D"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="ThSub">
+      <Font ss:FontName="Calibri" ss:Size="9" ss:Bold="1" ss:Color="#1B365D"/>
+      <Interior ss:Color="#EAEFF5" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="ThGrandTotal">
+      <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#5D4037"/>
+      <Interior ss:Color="#FFE082" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="TableCell">
+      <Font ss:FontName="Calibri" ss:Size="10"/>
+      <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="TableCellLeft">
+      <Font ss:FontName="Calibri" ss:Size="10"/>
+      <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="TableCellBoldLeft">
+      <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1"/>
+      <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="TableCellTotal">
+      <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#856404"/>
+      <Interior ss:Color="#FFF9E6" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="TableCellGrandTotal">
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#5D4037"/>
+      <Interior ss:Color="#FFE082" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="FooterTotalLeft">
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#0F223D"/>
+      <Interior ss:Color="#EAEFF5" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#1B365D"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#1B365D"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="FooterHighlight">
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#856404"/>
+      <Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#1B365D"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#1B365D"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="FooterGrandTotal">
+      <Font ss:FontName="Calibri" ss:Size="12" ss:Bold="1" ss:Color="#5D4037"/>
+      <Interior ss:Color="#FFE082" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#1B365D"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#1B365D"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#8D6E63"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="SectionHeader">
+      <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <Interior ss:Color="#1B365D" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F223D"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F223D"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F223D"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F223D"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="KpLabelCell">
+      <Font ss:FontName="Calibri" ss:Size="10"/>
+      <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="KpValueCell">
+      <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#0F223D"/>
+      <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
+      </Borders>
+    </Style>
+  </Styles>
+
+  <!-- ================= ВКЛАДКА 1: СПРАВКА ПО ВАГОНАМ ================= -->
+  <Worksheet ss:Name="${escapeXml(sheet1Name)}">
+    <Table ss:DefaultRowHeight="20">
+      <Column ss:Width="160"/> <!-- 1. Вид ремонта (широкий, текст не режется) -->
+      <Column ss:Width="70"/>  <!-- 2. Ожид КТТ -->
+      <Column ss:Width="100"/> <!-- 3. Ожид Собств -->
+      <Column ss:Width="100"/> <!-- 4. Итого ожид -->
+      <Column ss:Width="70"/>  <!-- 5. Напр КТТ -->
+      <Column ss:Width="100"/> <!-- 6. Напр Собств -->
+      <Column ss:Width="100"/> <!-- 7. Итого напр -->
+      <Column ss:Width="120"/> <!-- 8. ВСЕГО -->
+
+      <Row ss:Height="26">
+        <Cell ss:MergeAcross="7" ss:StyleID="HeaderTitle">
+          <Data ss:Type="String">ТОО "Astana Railway Services" | Суточная справка по вагонам на ${escapeXml(reportDate)} г. (${escapeXml(depotName)})</Data>
+        </Cell>
+      </Row>
+      <Row ss:Height="6"/>
+
+      <Row ss:Height="24">
+        <Cell ss:MergeDown="1" ss:StyleID="ThDark"><Data ss:Type="String">Вид ремонта</Data></Cell>
+        <Cell ss:MergeAcross="2" ss:StyleID="ThDark"><Data ss:Type="String">Вагоны в ожидании ремонта на станции</Data></Cell>
+        <Cell ss:MergeAcross="2" ss:StyleID="ThDark"><Data ss:Type="String">Вагоны, направленные к станции в ремонт</Data></Cell>
+        <Cell ss:MergeDown="1" ss:StyleID="ThGrandTotal"><Data ss:Type="String">ВСЕГО</Data></Cell>
+      </Row>
+      <Row ss:Height="20">
+        <Cell ss:Index="2" ss:StyleID="ThSub"><Data ss:Type="String">КТТ</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Собственники</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Итого в ожид.</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">КТТ</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Собственники</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Итого направл.</Data></Cell>
+      </Row>`;
+
+  matrixRows.forEach(r => {
+    xml += `
+      <Row ss:Height="21">
+        <Cell ss:StyleID="TableCellBoldLeft"><Data ss:Type="String">${escapeXml(r.rep)}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${parseInt(r.w_ktt) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${parseInt(r.w_own) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(r.w_sub) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${parseInt(r.d_ktt) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${parseInt(r.d_own) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(r.d_sub) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellGrandTotal"><Data ss:Type="Number">${parseInt(r.grand) || 0}</Data></Cell>
+      </Row>`;
+  });
+
+  xml += `
+      <Row ss:Height="24">
+        <Cell ss:StyleID="FooterTotalLeft"><Data ss:Type="String">ВСЕГО</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.w_ktt) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.w_own) || 0}</Data></Cell>
+        <Cell ss:StyleID="FooterHighlight"><Data ss:Type="Number">${parseInt(totals.w_sub) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.d_ktt) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.d_own) || 0}</Data></Cell>
+        <Cell ss:StyleID="FooterHighlight"><Data ss:Type="Number">${parseInt(totals.d_sub) || 0}</Data></Cell>
+        <Cell ss:StyleID="FooterGrandTotal"><Data ss:Type="Number">${parseInt(totals.grand) || 0}</Data></Cell>
+      </Row>
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <DisplayGridlines/>
+    </WorksheetOptions>
+  </Worksheet>
+
+  <!-- ================= ВКЛАДКА 2: ПОНОМЕРНАЯ СИТУАЦИЯ ================= -->
+  <Worksheet ss:Name="${escapeXml(sheet2Name)}">
+    <Table ss:DefaultRowHeight="20">
+      <Column ss:Width="40"/>  <!-- 1. № -->
+      <Column ss:Width="65"/>  <!-- 2. Депо -->
+      <Column ss:Width="210"/> <!-- 3. Статус / Раздел (широкий, входит полный статус) -->
+      <Column ss:Width="240"/> <!-- 4. Заказчик / Предприятие (входят полные наименования) -->
+      <Column ss:Width="95"/>  <!-- 5. № вагона -->
+      <Column ss:Width="140"/> <!-- 6. Род вагона -->
+      <Column ss:Width="75"/>  <!-- 7. Ремонт -->
+      <Column ss:Width="90"/>  <!-- 8. Дата подачи -->
+      <Column ss:Width="120"/> <!-- 9. Путь / Станция -->
+      <Column ss:Width="320"/> <!-- 10. Причина простоя / Примечание (с автопереносом) -->
+
+      <Row ss:Height="26">
+        <Cell ss:MergeAcross="9" ss:StyleID="HeaderTitle">
+          <Data ss:Type="String">Пономерной учёт вагонов (${escapeXml(depotName)} на ${escapeXml(reportDate)})</Data>
+        </Cell>
+      </Row>
+      <Row ss:Height="6"/>
+
+      <Row ss:Height="23">
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">№</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">Депо</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">Статус / Раздел</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">Заказчик / Предприятие</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">№ вагона</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">Род вагона</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">Ремонт</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">Дата подачи</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">Путь / Станция</Data></Cell>
+        <Cell ss:StyleID="ThDark"><Data ss:Type="String">Причина простоя / Примечание</Data></Cell>
+      </Row>`;
+
+  wagonRows.forEach(w => {
+    // Внимание: <Row> без жесткого ss:Height="21" — Excel сам раздвигает высоту ячейки под 2-3 строки текста!
+    xml += `
+      <Row>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${w.idx}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="String">${escapeXml(w.depot)}</Data></Cell>
+        <Cell ss:StyleID="TableCellLeft"><Data ss:Type="String">${escapeXml(w.status)}</Data></Cell>
+        <Cell ss:StyleID="TableCellLeft"><Data ss:Type="String">${escapeXml(w.cust)}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="String">${escapeXml(w.num)}</Data></Cell>
+        <Cell ss:StyleID="TableCellLeft"><Data ss:Type="String">${escapeXml(w.type)}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="String">${escapeXml(w.repair)}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="String">${escapeXml(w.date)}</Data></Cell>
+        <Cell ss:StyleID="TableCellLeft"><Data ss:Type="String">${escapeXml(w.loc)}</Data></Cell>
+        <Cell ss:StyleID="TableCellLeft"><Data ss:Type="String">${escapeXml(w.reason)}</Data></Cell>
+      </Row>`;
+  });
+
+  xml += `
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <DisplayGridlines/>
+    </WorksheetOptions>
+  </Worksheet>
+
+  <!-- ================= ВКЛАДКА 3: КОЛЁСНЫЕ ПАРЫ ================= -->
+  <Worksheet ss:Name="${escapeXml(sheet3Name)}">
+    <Table ss:DefaultRowHeight="20">
+      <Column ss:Width="240"/> <!-- 1. Наименование подкатки (широкий, входит 'СОНК (старые оси, новые колёса)') -->
+      <Column ss:Width="60"/>  <!-- 2. Шт. -->
+      <Column ss:Width="25"/>  <!-- 3. Разделитель -->
+      <Column ss:Width="220"/> <!-- 4. Категория ремфонда (широкий, входит 'Ремфонд осей под КР') -->
+      <Column ss:Width="60"/>  <!-- 5. Шт. -->
+
+      <Row ss:Height="26">
+        <Cell ss:MergeAcross="4" ss:StyleID="HeaderTitle">
+          <Data ss:Type="String">Участок КП и остаток ремфонда (${escapeXml(depotName)} на ${escapeXml(reportDate)})</Data>
+        </Cell>
+      </Row>
+      <Row ss:Height="6"/>
+
+      <Row ss:Height="22">
+        <Cell ss:MergeAcross="1" ss:StyleID="SectionHeader"><Data ss:Type="String">1. Подкатка под вагоны за смену</Data></Cell>
+        <Cell ss:StyleID="Default"/>
+        <Cell ss:MergeAcross="1" ss:StyleID="SectionHeader"><Data ss:Type="String">2. Остаток ремфонда на станции</Data></Cell>
+      </Row>
+      <Row ss:Height="20">
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Операция / Вид ремонта</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Шт.</Data></Cell>
+        <Cell ss:StyleID="Default"/>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Категория / Собственник</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Шт.</Data></Cell>
+      </Row>`;
+
+  for (let i = 0; i < 6; i++) {
+    const r1 = kpRoll[i] || { label: '', val: 0 };
+    const r2 = kpStock[i] || null;
+
+    xml += `
+      <Row ss:Height="21">
+        <Cell ss:StyleID="KpLabelCell"><Data ss:Type="String">${escapeXml(r1.label)}</Data></Cell>
+        <Cell ss:StyleID="KpValueCell"><Data ss:Type="Number">${r1.val}</Data></Cell>
+        <Cell ss:StyleID="Default"/>`;
+
+    if (r2) {
+      xml += `
+        <Cell ss:StyleID="KpLabelCell"><Data ss:Type="String">${escapeXml(r2.label)}</Data></Cell>
+        <Cell ss:StyleID="KpValueCell"><Data ss:Type="Number">${r2.val}</Data></Cell>`;
+    } else {
+      xml += `
+        <Cell ss:StyleID="Default"/>
+        <Cell ss:StyleID="Default"/>`;
+    }
+    xml += `
+      </Row>`;
+  }
+
+  xml += `
+      <Row ss:Height="24">
+        <Cell ss:StyleID="FooterTotalLeft"><Data ss:Type="String">ИТОГО ПОДКАТКА</Data></Cell>
+        <Cell ss:StyleID="FooterHighlight"><Data ss:Type="Number">${totKpRoll}</Data></Cell>
+        <Cell ss:StyleID="Default"/>
+        <Cell ss:StyleID="FooterTotalLeft"><Data ss:Type="String">ИТОГО РЕМФОНД</Data></Cell>
+        <Cell ss:StyleID="FooterHighlight"><Data ss:Type="Number">${totKpStock}</Data></Cell>
+      </Row>
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <DisplayGridlines/>
+    </WorksheetOptions>
+  </Worksheet>
+
+</Workbook>`;
+
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Справка_${depot}_${reportDate}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+```

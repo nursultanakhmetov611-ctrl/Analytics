@@ -113,3 +113,180 @@ export interface ChatMessage {
   timestamp: string;
   source?: string;
 }
+
+export interface ReferenceCustomer {
+  id: string;
+  name: string;
+  type: 'own' | 'ktt';
+}
+
+export interface ReferenceWagonType {
+  id: string;
+  name: string;
+  code?: string;
+  workload_coefficient?: number;
+}
+
+export interface ReferenceSection {
+  id: string;
+  label: string;
+  group: 'waiting' | 'directed' | 'release' | 'other';
+}
+
+export interface ReferenceDepot {
+  id: string;
+  code: string;
+  name: string;
+  city?: string;
+  daily_capacity?: number;
+}
+
+export interface ReferenceRepairItem {
+  code: string;
+  name: string;
+}
+
+export interface ArsReferences {
+  customers: ReferenceCustomer[];
+  wagonTypes: ReferenceWagonType[];
+  sections: ReferenceSection[];
+  depots: ReferenceDepot[];
+  repairs?: ReferenceRepairItem[];
+}
+
+export interface ShiftWagonRow {
+  id: string;
+  depot_code: string;
+  section: string;
+  customer: string;
+  wagon_number: string;
+  wagon_type: string;
+  repair_type: string;
+  submission_date: string;
+  track_or_location: string;
+  reason_details: string;
+}
+
+export interface DepotKpShiftData {
+  kp_nonk: number;
+  kp_sonk: number;
+  kp_sr_ob: number;
+  kp_tr_ob: number;
+  kp_sr_bez: number;
+  kp_tr_bez: number;
+  stock_ckk_ktt: number;
+  stock_sonk_ktt: number;
+  stock_ckk_ktz: number;
+  stock_sonk_ktz: number;
+  stock_rem_ktt: number;
+}
+
+export interface ArsUserAccount {
+  password: string;
+  role: 'headquarters' | 'branch';
+  depot_code: string;
+  display_name: string;
+}
+
+export interface ArsAuthSession {
+  username: string;
+  role: 'headquarters' | 'branch';
+  depot_code: string;
+  display_name: string;
+}
+
+declare global {
+  interface Window {
+    ARS_USERS?: Record<string, ArsUserAccount>;
+    DEFAULT_ARS_REPAIRS?: ReferenceRepairItem[];
+    REPAIR_TYPES?: Array<ReferenceRepairItem | string>;
+    getRepairCode?: (r: ReferenceRepairItem | string) => string;
+    getRepairName?: (r: ReferenceRepairItem | string) => string;
+    renderRefRepairsTable?: () => void;
+    handleAddRepairType?: () => void;
+    handleDeleteRepairType?: (code: string) => void;
+    renderBranchMatrixTable?: () => void;
+    updateAllWagonRepairSelects?: () => void;
+    openReferencesModal?: () => void;
+    closeReferencesModal?: () => void;
+    switchRefTab?: (tabId: string) => void;
+    handleAddCustomer?: () => void;
+    handleAddWagonType?: () => void;
+    handleAddSection?: () => void;
+    handleAddDepot?: () => void;
+    handleDeleteCustomer?: (id: string) => void;
+    handleDeleteWagonType?: (id: string) => void;
+    handleDeleteSection?: (id: string) => void;
+    handleDeleteDepot?: (id: string) => void;
+    selectDepot?: (depotCode: string) => void;
+    switchTab?: (tabId: string) => void;
+    syncMatrixFromWagons?: (animate?: boolean) => void;
+    isKTT?: (customer: string) => boolean;
+    addWagonRow?: () => void;
+    removeWagonRow?: (id: string) => void;
+    handleLogin?: () => void;
+    handleLogout?: () => void;
+    fillLoginCredentials?: (username: string, password: string) => void;
+    exportDailyReportCSV?: () => void;
+    handleExportReportClick?: () => void;
+    currentDepot?: string;
+    DEPOT_LABELS?: Record<string, string>;
+    currentUser?: ArsAuthSession | null;
+    currentReportData?: {
+      wheel_pairs?: Record<string, number>;
+    };
+    ARS_FLIGHT_RECORDER?: {
+      stepCount: number;
+      logs: Array<{
+        step: number;
+        time: string;
+        type: string;
+        desc: string;
+        meta?: { stack?: string } | null;
+        stateSnapshot: {
+          depot: string;
+          user: string;
+          date: string;
+          wagonsCount: number;
+        };
+      }>;
+    };
+    recordDevStep?: (type: string, description: string, meta?: { stack?: string } | null) => void;
+    renderDevLog?: () => void;
+    clearDevLog?: () => void;
+    copyDevBugReport?: () => void;
+    openAuditLogModal?: (initialTab?: string) => void;
+    closeAuditLogModal?: () => void;
+    switchAuditTab?: (tab: string) => void;
+    resetCurrentShift?: () => void;
+    showToast?: (message: string) => void;
+    logSystemAction?: (category: string, details: string) => void;
+    isolateAiAnalystForBranch?: () => void;
+    checkAuthAndInit?: () => Promise<void> | void;
+    updateShiftMasterKpi?: (depotCode?: string, data?: Record<string, unknown> | null) => void;
+    initDatePickerComponent?: () => void;
+    updateDatePickerDisplay?: () => void;
+    renderCalendarGrid?: () => void;
+    stepDateDay?: (offsetDays: number) => void;
+    stepCalMonth?: (offsetMonths: number) => void;
+    onCalMonthYearChange?: () => void;
+    goToTodayDate?: () => void;
+    setRelativeDateDay?: (offsetDays: number) => void;
+    toggleCalendarPopover?: (event?: MouseEvent | React.MouseEvent) => void;
+    closeCalendarPopover?: () => void;
+    onDateChange?: (val: string) => void;
+    setReportDateMode?: (mode: 'daily' | 'period') => void;
+    applyPeriodPreset?: (preset: '7days' | 'thisMonth' | 'lastMonth' | 'ytd') => void;
+    toggleSectionVisibility?: (
+      sectionKey: 'bannerKpi' | 'sectionMatrix' | 'sectionWagons' | 'sectionWheels' | 'sectionAiAnalyst',
+      visible?: boolean
+    ) => void;
+    OCTOBER_2026_DATA?: Record<string, unknown>;
+    loadCurrentBranchReport?: (depotCode?: string, dateStr?: string) => void;
+    calcBranchMatrix?: () => void;
+  }
+}
+
+
+
+

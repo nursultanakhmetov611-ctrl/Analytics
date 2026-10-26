@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Search, Copy, Check, FileSpreadsheet, RotateCcw, ArrowUpRight } from 'lucide-react';
-import { ArsDataset, ChatMessage, WagonDislocationRow } from '../types/ars';
+import { ArsAuthSession, ArsDataset, ChatMessage, WagonDislocationRow } from '../types/ars';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { StallReasonsMatrix } from './StallReasonsMatrix';
+import { StallReasonsMatrix, isolateAiAnalystForBranch } from './StallReasonsMatrix';
 
 interface AnalystWorkspaceProps {
   data: ArsDataset;
+  currentUser?: ArsAuthSession | null;
   messages: ChatMessage[];
   isLoading: boolean;
   onSendPrompt: (prompt: string) => void;
@@ -14,7 +15,7 @@ interface AnalystWorkspaceProps {
   onSelectWagonNumber: (num: string) => void;
 }
 
-const PRESET_QUERIES = [
+const HQ_PRESET_QUERIES = [
   {
     label: 'Сводная таблица простоев по депо и причинам',
     prompt: 'Визуализируй сводную таблицу по всем депо: количество вагонов в простое, распределенное по причинам (КП, автосцепка, неисправность механизмов, ожидание подачи).',
@@ -54,6 +55,7 @@ const QUICK_WAGON_EXAMPLES = [
 
 export const AnalystWorkspace: React.FC<AnalystWorkspaceProps> = ({
   data,
+  currentUser,
   messages,
   isLoading,
   onSendPrompt,
@@ -66,11 +68,41 @@ export const AnalystWorkspace: React.FC<AnalystWorkspaceProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const isBranch = currentUser?.role === 'branch';
+  const myDepot = isBranch ? (currentUser?.depot_code || 'KVRD').toUpperCase() : 'ALL';
+
+  const activePresets = isBranch
+    ? [
+        {
+          label: `Таблица простоев филиала ${myDepot}`,
+          prompt: `Покажи аналитическую таблицу филиала ${myDepot}: распределение вагонов в простое и ожидании по причинам.`,
+        },
+        {
+          label: `План и факт филиала ${myDepot} (Октябрь 2026)`,
+          prompt: `Дай детальный анализ выполнения плана ремонта вагонов по депо ${myDepot} за октябрь 2026 г. в разрезе видов ремонта и заказчиков.`,
+        },
+        {
+          label: `Неоконченный ремонт и пути (${myDepot})`,
+          prompt: `Проанализируй неоконченный ремонт и пономерной список задержанных вагонов в филиале ${myDepot}: укажи номера вагонов, заказчиков, пути отстоя и причины простоев.`,
+        },
+        {
+          label: `Баланс и расход КП (${myDepot})`,
+          prompt: `Представь аналитический отчет по балансу, запасам (СОНК, ЦКК, ремфонд КТТ) и расходу колёсных пар по филиалу ${myDepot} за 2026 год.`,
+        },
+      ]
+    : HQ_PRESET_QUERIES;
+
   useEffect(() => {
     if (selectedWagonNumber) {
       setWagonQuery(selectedWagonNumber);
     }
   }, [selectedWagonNumber]);
+
+  useEffect(() => {
+    isolateAiAnalystForBranch();
+    const t = setTimeout(isolateAiAnalystForBranch, 60);
+    return () => clearTimeout(t);
+  }, [currentUser, messages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,10 +130,11 @@ export const AnalystWorkspace: React.FC<AnalystWorkspaceProps> = ({
     : [];
 
   return (
-    <div className="space-y-6">
+    <div id="analystWorkspaceRoot" className="analyst-workspace-root space-y-6">
       {/* Cross-Depot Idle & Unfinished Repair Visualization Matrix */}
       <StallReasonsMatrix
         data={data}
+        currentUser={currentUser}
         onAskAnalyst={onSendPrompt}
         onInspectWagon={(wNum) => {
           setWagonQuery(wNum);
@@ -116,10 +149,14 @@ export const AnalystWorkspace: React.FC<AnalystWorkspaceProps> = ({
         <div className="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-bold text-slate-900 tracking-tight">
-              Интеллектуальный аналитик производственного отдела АРС
+              {isBranch
+                ? `Интеллектуальный аналитик филиала ${myDepot} (${currentUser?.display_name})`
+                : 'Интеллектуальный аналитик производственного отдела АРС'}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              База 2026 г. · 4 филиала (БВРД, АВРД, КВРД, УВРД) · Свод на 20.10.2026 и дислокация на 22.10.2026
+              {isBranch
+                ? `База 2026 г. · Изолированный контур депо ${myDepot} · Свод на 20.10.2026 и дислокация на 22.10.2026`
+                : 'База 2026 г. · 4 филиала (БВРД, АВРД, КВРД, УВРД) · Свод на 20.10.2026 и дислокация на 22.10.2026'}
             </p>
           </div>
           <button
@@ -135,10 +172,12 @@ export const AnalystWorkspace: React.FC<AnalystWorkspaceProps> = ({
         {/* Preset Executive Queries Bar */}
         <div className="px-6 py-3 bg-slate-50/70 border-b border-slate-200">
           <div className="text-xs font-medium text-slate-500 mb-2">
-            Быстрые аналитические запросы руководства:
+            {isBranch
+              ? `Быстрые аналитические запросы филиала ${myDepot}:`
+              : 'Быстрые аналитические запросы руководства:'}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {PRESET_QUERIES.map((preset, idx) => (
+            {activePresets.map((preset, idx) => (
               <button
                 key={idx}
                 type="button"

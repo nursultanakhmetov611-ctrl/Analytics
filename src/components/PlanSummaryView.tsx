@@ -29,6 +29,15 @@ export const PlanSummaryView: React.FC<PlanSummaryViewProps> = ({ data, onAskAna
   const [selectedSection, setSelectedSection] = useState<string>('ALL_KEY');
   const [selectedDepot, setSelectedDepot] = useState<string>('ALL');
 
+  const depotFilters = [
+    { code: 'ALL', label: 'Все депо и ИТОГО' },
+    { code: 'TOTAL', label: 'Только ИТОГО (Холдинг)' },
+    ...data.depots.map((d) => ({
+      code: d.code,
+      label: `${d.code} (${d.city || d.name})`,
+    })),
+  ];
+
   // Extract the final 15 rows (66-80) for top depot performance cards
   const overallByDepot = data.summary_reports.filter(
     (r) => r.row_index >= 76 && r.row_index <= 79
@@ -187,7 +196,7 @@ export const PlanSummaryView: React.FC<PlanSummaryViewProps> = ({ data, onAskAna
             <div className="flex items-center gap-1.5">
               <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                {DEPOT_FILTERS.map((df) => (
+                {depotFilters.map((df) => (
                   <button
                     key={df.code}
                     type="button"

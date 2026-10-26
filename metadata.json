@@ -2,5 +2,7 @@
   "name": "АРС Аналитик — Astana Railway Services",
   "description": "Интеллектуальный аналитик и ситуационный центр производственного отдела вагоноремонтного холдинга ТОО «Astana Railway Services» за 2026 год.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

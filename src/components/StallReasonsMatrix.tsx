@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowUpRight, Filter } from 'lucide-react';
-import { ArsDataset } from '../types/ars';
+import { ArsAuthSession, ArsDataset } from '../types/ars';
 
 interface StallReasonsMatrixProps {
   data: ArsDataset;
+  currentUser?: ArsAuthSession | null;
   onAskAnalyst: (prompt: string) => void;
   onInspectWagon: (wagonNumber: string) => void;
 }
@@ -30,6 +31,233 @@ export interface DepotStallRow {
   atStationOct: number;
   note: string;
   sampleWagons: Array<{ num: string; reason: string; repair: string; customer: string }>;
+}
+
+const HQ_SUBTITLE_TEXT =
+  'Распределение по 4 филиалам (АВРД, КВРД, УВРД, БВРД) и причинам: колёсные пары (КП), автосцепка, разгрузочные механизмы / ХДВ, ожидание подачи';
+const HQ_TABLE_TITLE_TEXT =
+  'Сводная таблица по всем депо: распределение вагонов в простое и ожидании по причинам';
+const HQ_STRUCT_TITLE_TEXT =
+  'Структура подтвержденных причин простоя в ремонте (пономерной учет КВРД — 24 ваг. UNFINISHED + 81 ваг. ожидание подачи)';
+
+// ========================================================
+// ПОЛНАЯ ИЗОЛЯЦИЯ РАЗДЕЛА «ИИ-АНАЛИТИК» ПО РОЛИ ПОЛЬЗОВАТЕЛЯ
+// ========================================================
+export function isolateAiAnalystForBranch(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  let user: ArsAuthSession | null =
+    typeof window.currentUser !== 'undefined' && window.currentUser
+      ? window.currentUser
+      : null;
+
+  if (!user) {
+    try {
+      const raw =
+        localStorage.getItem('ars_current_user') ||
+        localStorage.getItem('ars_auth_session_2026_v1');
+      if (raw) {
+        user = JSON.parse(raw);
+      }
+    } catch (_e) {
+      // ignore parse errors
+    }
+  }
+
+  const isBranch = Boolean(user && user.role === 'branch');
+  const myDepot = isBranch ? (user?.depot_code || 'KVRD').toUpperCase() : 'ALL';
+
+  const DEPOT_KEYS: Record<string, string[]> = {
+    KVRD: ['КВРД', 'Кушмурун'],
+    AVRD: ['АВРД', 'Арыс'],
+    BVRD: ['БВРД', 'Балхаш'],
+    UVRD: ['УВРД', 'Уральск'],
+  };
+
+  const rootScope =
+    document.getElementById('stallReasonsMatrixRoot') ||
+    document.getElementById('analystWorkspaceRoot') ||
+    document;
+
+  // 1. ФИЛЬТРАЦИЯ КАРТОЧЕК В ЛЕВОЙ КОЛОНКЕ («Визуализация загрузки»)
+  rootScope.querySelectorAll('div').forEach((el) => {
+    const htmlEl = el as HTMLElement;
+    const explicitCode = htmlEl.getAttribute('data-depot-card');
+    if (explicitCode) {
+      if (isBranch) {
+        if (explicitCode.toUpperCase() === myDepot) {
+          htmlEl.style.setProperty('display', 'block', 'important');
+        } else {
+          htmlEl.style.setProperty('display', 'none', 'important');
+        }
+      } else {
+        htmlEl.style.removeProperty('display');
+      }
+      return;
+    }
+
+    // Не трогаем родительские контейнеры, содержащие карточки депо
+    if (htmlEl.querySelector('[data-depot-card], .depot-load-card')) {
+      return;
+    }
+
+    const txt = (htmlEl.innerText || '').trim();
+    if (htmlEl.children.length >= 2 && htmlEl.offsetHeight > 50 && htmlEl.offsetWidth > 220) {
+      for (const [code, names] of Object.entries(DEPOT_KEYS)) {
+        if (
+          names.some(
+            (n) =>
+              txt.startsWith(n) ||
+              txt.startsWith(`${code} (`) ||
+              txt.startsWith(`${n} (`)
+          )
+        ) {
+          if (isBranch) {
+            if (code === myDepot) {
+              htmlEl.style.setProperty('display', 'block', 'important');
+            } else {
+              htmlEl.style.setProperty('display', 'none', 'important');
+            }
+          } else {
+            htmlEl.style.removeProperty('display');
+          }
+          break;
+        }
+      }
+    }
+  });
+
+  // 2. ФИЛЬТРАЦИЯ СТРОК НИЖНЕЙ ТАБЛИЦЫ («Сводная таблица по всем депо»)
+  const analystRoot = document.getElementById('analystWorkspaceRoot') || rootScope;
+  analystRoot.querySelectorAll('tr').forEach((tr) => {
+    const htmlTr = tr as HTMLElement;
+    const rowText = htmlTr.innerText || '';
+    const explicitRowCode = htmlTr.getAttribute('data-depot-row');
+
+    if (explicitRowCode) {
+      if (isBranch) {
+        if (explicitRowCode.toUpperCase() === myDepot) {
+          htmlTr.style.setProperty('display', '', 'important');
+        } else {
+          htmlTr.style.setProperty('display', 'none', 'important');
+        }
+      } else {
+        htmlTr.style.removeProperty('display');
+      }
+      return;
+    }
+
+    // Скрываем строки чужих филиалов
+    for (const [code, names] of Object.entries(DEPOT_KEYS)) {
+      if (names.some((n) => rowText.includes(n))) {
+        if (isBranch) {
+          if (code === myDepot) {
+            htmlTr.style.setProperty('display', '', 'important');
+          } else {
+            htmlTr.style.setProperty('display', 'none', 'important');
+          }
+        } else {
+          htmlTr.style.removeProperty('display');
+        }
+        break;
+      }
+    }
+
+    // Скрываем строку «ИТОГО ПО ХОЛДИНГУ АРС» для филиала
+    if (
+      rowText.includes('ИТОГО ПО ХОЛДИНГУ') ||
+      rowText.includes('ИТОГО ПО ВСЕМ') ||
+      rowText.includes('ИТОГО АРС') ||
+      rowText.includes('ИТОГО ХОЛДИНГ')
+    ) {
+      if (isBranch) {
+        htmlTr.style.setProperty('display', 'none', 'important');
+      } else {
+        htmlTr.style.removeProperty('display');
+      }
+    }
+  });
+
+  // 3. СКРЫТИЕ КНОПКИ «СВОД ПО 4 ДЕПО»
+  document.querySelectorAll('button, a').forEach((btn) => {
+    const htmlBtn = btn as HTMLElement;
+    const bText = htmlBtn.innerText || '';
+    if (bText.includes('Свод по 4 депо') || bText.includes('Свод по всем депо')) {
+      if (isBranch) {
+        htmlBtn.style.setProperty('display', 'none', 'important');
+      } else {
+        htmlBtn.style.removeProperty('display');
+      }
+    }
+  });
+
+  // 4. АДАПТАЦИЯ ТЕКСТОВ И ЗАГОЛОВКОВ ПОД ТЕКУЩИЙ ФИЛИАЛ
+  if (isBranch) {
+    document.querySelectorAll('h3, h4, p, span').forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      if (htmlEl.children.length > 0 && !htmlEl.hasAttribute('data-analyst-heading')) {
+        return;
+      }
+      const text = htmlEl.innerText || '';
+      // Подзаголовок вверху
+      if (
+        text.includes('Распределение по 4 филиалам') ||
+        htmlEl.getAttribute('data-analyst-heading') === 'subtitle'
+      ) {
+        htmlEl.innerText = `Анализ причин задержек и неоконченного ремонта филиала ${myDepot}`;
+      }
+      // Заголовок нижней таблицы
+      if (
+        text.includes('Сводная таблица по всем депо') ||
+        htmlEl.getAttribute('data-analyst-heading') === 'table-title'
+      ) {
+        htmlEl.innerText = `Аналитическая таблица филиала ${myDepot}: распределение вагонов в простое и ожидании по причинам`;
+      }
+    });
+
+    // Заголовок правого блока причин
+    const structTitle = document.querySelector('.structure-title, h4') as HTMLElement | null;
+    if (
+      structTitle &&
+      (structTitle.innerText.includes('Структура подтвержденных причин') ||
+        structTitle.classList.contains('structure-title'))
+    ) {
+      structTitle.innerText = `Структура подтвержденных причин простоя в ремонте (${myDepot})`;
+    }
+  } else {
+    const subEl = document.querySelector('[data-analyst-heading="subtitle"]') as HTMLElement | null;
+    if (subEl) subEl.innerText = HQ_SUBTITLE_TEXT;
+    const tblEl = document.querySelector('[data-analyst-heading="table-title"]') as HTMLElement | null;
+    if (tblEl) tblEl.innerText = HQ_TABLE_TITLE_TEXT;
+    const structTitle = document.querySelector('.structure-title') as HTMLElement | null;
+    if (structTitle) structTitle.innerText = HQ_STRUCT_TITLE_TEXT;
+  }
+}
+
+// Регистрация глобальных обработчиков клика по вкладке «ИИ-Аналитик» и загрузки
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  window.isolateAiAnalystForBranch = isolateAiAnalystForBranch;
+
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    const tab = target?.closest('button, a, .nav-item, [data-tab]') as HTMLElement | null;
+    if (tab && ((tab.innerText || '').includes('Аналитик') || (tab.innerText || '').includes('ИИ-Аналитик'))) {
+      setTimeout(isolateAiAnalystForBranch, 50);
+      setTimeout(isolateAiAnalystForBranch, 200);
+    }
+  });
+
+  if (typeof window.checkAuthAndInit === 'function') {
+    const origAuth = window.checkAuthAndInit;
+    window.checkAuthAndInit = async function () {
+      await origAuth();
+      isolateAiAnalystForBranch();
+    };
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(isolateAiAnalystForBranch, 150);
+  });
 }
 
 // Structured breakdown combining exact 20.10.2026 summary_reports (all 4 depots) + KVRD itemized dislocation records
@@ -132,13 +360,82 @@ export const DEPOT_STALL_MATRIX_DATA: DepotStallRow[] = [
   },
 ];
 
+const DEPOT_LOAD_CARDS = [
+  {
+    code: 'AVRD',
+    name: 'АВРД (г. Арыс)',
+    unfinished: 14,
+    dr: 4,
+    kr: 10,
+    tor: 0,
+    waitingTracks: 0,
+    station: 0,
+    totalIdle: 14,
+    maxScale: 24,
+    breakdownText: '14 ваг. в неоконч. ремонте: 4 ДР (3 частн., 1 ЦЖС) и 10 КР (4 КТТ, 6 частн.)',
+  },
+  {
+    code: 'KVRD',
+    name: 'КВРД (п. Кушмурун)',
+    unfinished: 2,
+    dr: 0,
+    kr: 2,
+    tor: 0,
+    waitingTracks: 13,
+    station: 4,
+    totalIdle: 19,
+    maxScale: 24,
+    breakdownText:
+      '2 ваг. КР-ЦЖС в своде (7 на вых. 22.10) + 13 ваг. в ожидании на путях 51, 52, 58, 59 + 4 на станции',
+  },
+  {
+    code: 'UVRD',
+    name: 'УВРД (г. Уральск)',
+    unfinished: 3,
+    dr: 2,
+    kr: 0,
+    tor: 1,
+    waitingTracks: 0,
+    station: 0,
+    totalIdle: 3,
+    maxScale: 24,
+    breakdownText: '3 ваг. в неоконч. ремонте: 1 ДР КТТ, 1 ДР собственников, 1 ТОР собственников',
+  },
+  {
+    code: 'BVRD',
+    name: 'БВРД (г. Балхаш)',
+    unfinished: 2,
+    dr: 1,
+    kr: 1,
+    tor: 0,
+    waitingTracks: 6,
+    station: 0,
+    totalIdle: 8,
+    maxScale: 24,
+    breakdownText: '2 ваг. в неоконч. ремонте (1 ДР КТТ, 1 КР КТТ) + 6 ваг. суточная подача в ремонт',
+  },
+];
+
 export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
   data,
+  currentUser,
   onAskAnalyst,
   onInspectWagon,
 }) => {
   const [mode, setMode] = useState<MatrixMode>('october_summary');
   const [selectedReasonCategory, setSelectedReasonCategory] = useState<string>('ALL');
+
+  const isBranch = currentUser?.role === 'branch';
+  const myDepot = isBranch ? (currentUser?.depot_code || 'KVRD').toUpperCase() : 'ALL';
+
+  useEffect(() => {
+    window.isolateAiAnalystForBranch = isolateAiAnalystForBranch;
+    isolateAiAnalystForBranch();
+    const timer = setTimeout(isolateAiAnalystForBranch, 50);
+    return () => clearTimeout(timer);
+  }, [currentUser, mode]);
+
+  const activeBranchCard = DEPOT_LOAD_CARDS.find((c) => c.code === myDepot) || DEPOT_LOAD_CARDS[1];
 
   // Exact itemized classification from KVRD wagon_dislocations_and_stalls (203 records)
   const itemizedReasons = [
@@ -215,7 +512,7 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
     },
   ];
 
-  // October 2026 (22.10) Waiting on Depot Tracks & At Station breakdown for KVRD
+  // October 2026 (22.10) Waiting on Depot Tracks & At Station breakdown
   const octWaitingWagons = data.wagon_dislocations_and_stalls.filter(
     (w) =>
       w.report_date === '2026-10-22' &&
@@ -223,15 +520,20 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
   );
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6">
+    <div id="stallReasonsMatrixRoot" className="bg-white border border-slate-200 rounded-xl p-6 space-y-6">
       {/* Header & Mode Switch */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
           <h2 className="text-base font-bold text-slate-900 tracking-tight">
             Сводная матрица простоев и неоконченного ремонта по депо и причинам задержек
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Распределение по 4 филиалам (АВРД, КВРД, УВРД, БВРД) и причинам: колёсные пары (КП), автосцепка, разгрузочные механизмы / ХДВ, ожидание подачи
+          <p
+            data-analyst-heading="subtitle"
+            className="text-xs text-slate-500 mt-0.5"
+          >
+            {isBranch
+              ? `Анализ причин задержек и неоконченного ремонта филиала ${myDepot}`
+              : HQ_SUBTITLE_TEXT}
           </p>
         </div>
 
@@ -240,6 +542,7 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
             <button
               type="button"
               onClick={() => setMode('october_summary')}
+              style={{ display: isBranch ? 'none' : undefined }}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 mode === 'october_summary'
                   ? 'bg-white text-slate-900 shadow-xs'
@@ -252,12 +555,14 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
               type="button"
               onClick={() => setMode('annual_dislocation')}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                mode === 'annual_dislocation'
+                mode === 'annual_dislocation' || isBranch
                   ? 'bg-white text-slate-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Пономерная база причин (КВРД · 203 зап.)
+              {isBranch
+                ? `Пономерная база причин (${myDepot})`
+                : 'Пономерная база причин (КВРД · 203 зап.)'}
             </button>
           </div>
 
@@ -265,7 +570,9 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
             type="button"
             onClick={() =>
               onAskAnalyst(
-                'Визуализируй сводную таблицу по всем депо: количество вагонов в простое, распределенное по причинам (КП, автосцепка, неисправность механизмов, ожидание подачи).'
+                isBranch
+                  ? `Проанализируй причины простоев и неоконченного ремонта по филиалу ${myDepot} (КП, автосцепка, механизмы, ожидание подачи).`
+                  : 'Визуализируй сводную таблицу по всем депо: количество вагонов в простое, распределенное по причинам (КП, автосцепка, неисправность механизмов, ожидание подачи).'
               )
             }
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
@@ -276,72 +583,32 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
         </div>
       </div>
 
-      {/* Visual Proportional Distribution Bars across 4 Depots */}
+      {/* Visual Proportional Distribution Bars */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7 space-y-4">
           <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
-            <span>Визуализация загрузки неоконченным ремонтом и ожиданием подачи по депо</span>
+            <span>
+              {isBranch
+                ? `Визуализация загрузки неоконченным ремонтом и ожиданием подачи (${myDepot})`
+                : 'Визуализация загрузки неоконченным ремонтом и ожиданием подачи по депо'}
+            </span>
             <span className="font-mono tabular-nums text-slate-900 font-semibold">
-              Неоконч. ремонт (20.10): 21 ваг. · Ожидание на путях (22.10): 17 ваг.
+              {isBranch
+                ? `Неоконч. ремонт (20.10): ${activeBranchCard.unfinished} ваг. · Ожидание на путях (22.10): ${
+                    activeBranchCard.waitingTracks + activeBranchCard.station
+                  } ваг.`
+                : 'Неоконч. ремонт (20.10): 21 ваг. · Ожидание на путях (22.10): 17 ваг.'}
             </span>
           </div>
 
           <div className="space-y-3.5">
-            {[
-              {
-                code: 'AVRD',
-                name: 'АВРД (г. Арыс)',
-                unfinished: 14,
-                dr: 4,
-                kr: 10,
-                tor: 0,
-                waitingTracks: 0,
-                station: 0,
-                totalIdle: 14,
-                maxScale: 24,
-                breakdownText: '14 ваг. в неоконч. ремонте: 4 ДР (3 частн., 1 ЦЖС) и 10 КР (4 КТТ, 6 частн.)',
-              },
-              {
-                code: 'KVRD',
-                name: 'КВРД (п. Кушмурун)',
-                unfinished: 2,
-                dr: 0,
-                kr: 2,
-                tor: 0,
-                waitingTracks: 13,
-                station: 4,
-                totalIdle: 19,
-                maxScale: 24,
-                breakdownText: '2 ваг. КР-ЦЖС в своде (7 на вых. 22.10) + 13 ваг. в ожидании на путях 51, 52, 58, 59 + 4 на станции',
-              },
-              {
-                code: 'UVRD',
-                name: 'УВРД (г. Уральск)',
-                unfinished: 3,
-                dr: 2,
-                kr: 0,
-                tor: 1,
-                waitingTracks: 0,
-                station: 0,
-                totalIdle: 3,
-                maxScale: 24,
-                breakdownText: '3 ваг. в неоконч. ремонте: 1 ДР КТТ, 1 ДР собственников, 1 ТОР собственников',
-              },
-              {
-                code: 'BVRD',
-                name: 'БВРД (г. Балхаш)',
-                unfinished: 2,
-                dr: 1,
-                kr: 1,
-                tor: 0,
-                waitingTracks: 6,
-                station: 0,
-                totalIdle: 8,
-                maxScale: 24,
-                breakdownText: '2 ваг. в неоконч. ремонте (1 ДР КТТ, 1 КР КТТ) + 6 ваг. суточная подача в ремонт',
-              },
-            ].map((row) => (
-              <div key={row.code} className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+            {DEPOT_LOAD_CARDS.map((row) => (
+              <div
+                key={row.code}
+                data-depot-card={row.code}
+                style={{ display: isBranch && row.code !== myDepot ? 'none' : 'block' }}
+                className="depot-load-card p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2"
+              >
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <div>
                     <span className="font-bold text-slate-900">{row.name}</span>
@@ -404,11 +671,13 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
           </div>
         </div>
 
-        {/* Right 5 Columns: Itemized Reason Breakdown in KVRD */}
+        {/* Right 5 Columns: Itemized Reason Breakdown */}
         <div className="lg:col-span-5 bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold text-slate-900">
-              Структура подтвержденных причин простоя в ремонте (пономерной учет КВРД — 24 ваг. UNFINISHED + 81 ваг. ожидание подачи)
+            <h3 className="text-xs font-bold text-slate-900 structure-title">
+              {isBranch
+                ? `Структура подтвержденных причин простоя в ремонте (${myDepot})`
+                : HQ_STRUCT_TITLE_TEXT}
             </h3>
           </div>
 
@@ -445,11 +714,16 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
         </div>
       </div>
 
-      {/* Main Summary Pivot Table Across All 4 Depots */}
+      {/* Main Summary Pivot Table */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900">
-            Сводная таблица по всем депо: распределение вагонов в простое и ожидании по причинам
+          <h3
+            data-analyst-heading="table-title"
+            className="text-sm font-bold text-slate-900"
+          >
+            {isBranch
+              ? `Аналитическая таблица филиала ${myDepot}: распределение вагонов в простое и ожидании по причинам`
+              : HQ_TABLE_TITLE_TEXT}
           </h3>
           <span className="text-xs text-slate-500">
             Данные `summary_reports` (на 20.10.2026) + `wagon_dislocations_and_stalls` (февраль–октябрь 2026)
@@ -471,7 +745,11 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/70">
-              <tr className="hover:bg-slate-50 text-slate-800">
+              <tr
+                data-depot-row="KVRD"
+                style={{ display: isBranch && myDepot !== 'KVRD' ? 'none' : '' }}
+                className="hover:bg-slate-50 text-slate-800"
+              >
                 <td className="py-3 px-4 font-semibold text-slate-900 whitespace-nowrap">
                   КВРД (Кушмурун)
                   <div className="text-[11px] font-normal text-slate-500">Пономерная база (203 зап.)</div>
@@ -499,7 +777,11 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
                 </td>
               </tr>
 
-              <tr className="hover:bg-slate-50 text-slate-800">
+              <tr
+                data-depot-row="AVRD"
+                style={{ display: isBranch && myDepot !== 'AVRD' ? 'none' : '' }}
+                className="hover:bg-slate-50 text-slate-800"
+              >
                 <td className="py-3 px-4 font-semibold text-slate-900 whitespace-nowrap">
                   АВРД (Арыс)
                   <div className="text-[11px] font-normal text-slate-500">Сводный отчет на 20.10.2026</div>
@@ -527,7 +809,11 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
                 </td>
               </tr>
 
-              <tr className="hover:bg-slate-50 text-slate-800">
+              <tr
+                data-depot-row="UVRD"
+                style={{ display: isBranch && myDepot !== 'UVRD' ? 'none' : '' }}
+                className="hover:bg-slate-50 text-slate-800"
+              >
                 <td className="py-3 px-4 font-semibold text-slate-900 whitespace-nowrap">
                   УВРД (Уральск)
                   <div className="text-[11px] font-normal text-slate-500">Сводный отчет на 20.10.2026</div>
@@ -555,7 +841,11 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
                 </td>
               </tr>
 
-              <tr className="hover:bg-slate-50 text-slate-800">
+              <tr
+                data-depot-row="BVRD"
+                style={{ display: isBranch && myDepot !== 'BVRD' ? 'none' : '' }}
+                className="hover:bg-slate-50 text-slate-800"
+              >
                 <td className="py-3 px-4 font-semibold text-slate-900 whitespace-nowrap">
                   БВРД (Балхаш)
                   <div className="text-[11px] font-normal text-slate-500">Сводный отчет на 20.10.2026</div>
@@ -583,7 +873,11 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
                 </td>
               </tr>
 
-              <tr className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-300">
+              <tr
+                data-holding-total-row="true"
+                style={{ display: isBranch ? 'none' : '' }}
+                className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-300"
+              >
                 <td className="py-3 px-4">ИТОГО ПО ХОЛДИНГУ АРС</td>
                 <td className="py-3 px-3 text-right font-mono tabular-nums">
                   21 ваг. (свод 20.10)
@@ -677,30 +971,32 @@ export const StallReasonsMatrix: React.FC<StallReasonsMatrixProps> = ({
       )}
 
       {/* October 22, 2026 Active Track Waiting List (51, 52, 58, 59 tracks) */}
-      <div className="pt-2">
-        <div className="text-xs font-bold text-slate-900 mb-2">
-          Оперативный срез вагонов в ожидании подачи на путях ВРД (51, 52, 58, 59 пути) и на станции на 22.10.2026 г. ({octWaitingWagons.length} ваг.)
+      {octWaitingWagons.length > 0 && (
+        <div className="pt-2">
+          <div className="text-xs font-bold text-slate-900 mb-2">
+            Оперативный срез вагонов в ожидании подачи на путях ВРД (51, 52, 58, 59 пути) и на станции на 22.10.2026 г. ({octWaitingWagons.length} ваг.)
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {octWaitingWagons.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                onClick={() => onInspectWagon(w.wagon_number)}
+                className="px-2.5 py-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-md text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                title={`${w.customer_name} · ${w.repair_type} · ${w.status_ru} · ${w.track_or_location || w.reason_details}`}
+              >
+                <span className="font-mono tabular-nums font-bold text-slate-900">{w.wagon_number}</span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-600">{w.repair_type}</span>
+                <span className="text-slate-400">·</span>
+                <span className="font-mono text-[11px] text-blue-700">
+                  {w.track_or_location || (w.reason_details.includes('не подали') ? 'не подали со ст.' : 'выход 22.10')}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {octWaitingWagons.map((w) => (
-            <button
-              key={w.id}
-              type="button"
-              onClick={() => onInspectWagon(w.wagon_number)}
-              className="px-2.5 py-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-md text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-              title={`${w.customer_name} · ${w.repair_type} · ${w.status_ru} · ${w.track_or_location || w.reason_details}`}
-            >
-              <span className="font-mono tabular-nums font-bold text-slate-900">{w.wagon_number}</span>
-              <span className="text-slate-400">·</span>
-              <span className="text-slate-600">{w.repair_type}</span>
-              <span className="text-slate-400">·</span>
-              <span className="font-mono text-[11px] text-blue-700">
-                {w.track_or_location || (w.reason_details.includes('не подали') ? 'не подали со ст.' : 'выход 22.10')}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   );
 };
