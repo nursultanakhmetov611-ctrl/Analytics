@@ -190,6 +190,7 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
 
   const openReferencesModal = useCallback(() => {
     setIsOpen(true);
+    document.body.style.overflow = 'hidden';
     const el = document.getElementById('modalReferences');
     if (el) el.style.display = 'flex';
     setTimeout(() => {
@@ -199,9 +200,21 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
 
   const closeReferencesModal = useCallback(() => {
     setIsOpen(false);
+    document.body.style.overflow = 'unset';
     const el = document.getElementById('modalReferences');
     if (el) el.style.display = 'none';
   }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
   const switchRefTab = useCallback((tabId: string) => {
     if (
@@ -592,7 +605,7 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
     <div
       id="modalReferences"
       className="modal-backdrop"
-      style={{ display: isOpen ? 'flex' : 'none' }}
+      style={{ display: isOpen ? 'flex' : 'none', overscrollBehavior: 'contain' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) closeReferencesModal();
       }}
@@ -707,7 +720,14 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
           </button>
         </div>
 
-        <div className="modal-body">
+        <div
+          className="modal-body overflow-y-auto"
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#CBD5E1 transparent',
+            overscrollBehavior: 'contain',
+          }}
+        >
           {/* Вкладка 1: Заказчики / Предприятия */}
           <div
             id="ref-tab-customers"
@@ -739,7 +759,7 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
                 ➕ Добавить в список
               </button>
             </div>
-            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+            <div>
               <table className="ref-table">
                 <thead>
                   <tr>
@@ -802,7 +822,7 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
                 ➕ Добавить род вагона
               </button>
             </div>
-            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+            <div>
               <table className="ref-table">
                 <thead>
                   <tr>
@@ -866,7 +886,7 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
                 ➕ Добавить статус
               </button>
             </div>
-            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+            <div>
               <table className="ref-table">
                 <thead>
                   <tr>
@@ -972,7 +992,7 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
               💡 При добавлении филиала создаётся учётная запись мастера: логин <code>[код]</code>, пароль <code>[код]2026</code>.
             </p>
 
-            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+            <div>
               <table className="ref-table">
                 <thead>
                   <tr>
@@ -1119,7 +1139,7 @@ export const ReferencesModal: React.FC<ReferencesModalProps> = ({
               </div>
             </div>
 
-            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+            <div>
               <table className="ref-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#F1F5F9', textAlign: 'left' }}>

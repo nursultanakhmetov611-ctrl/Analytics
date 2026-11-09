@@ -67,6 +67,7 @@
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  overscroll-behavior: contain;
 }
 
 .modal-card {
@@ -180,7 +181,23 @@
 .modal-body {
   padding: 1.25rem 1.5rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5E1 transparent;
   background-color: #ffffff;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background-color: #CBD5E1;
+  border-radius: 9999px;
 }
 
 .modal-tab-panel {
@@ -755,127 +772,202 @@
 .text-success-sub { color: #15803D !important; border-top-color: #DCFCE7 !important; }
 
 /* Кастомный компонент выбора даты, месяца и года с календарем */
-.ars-date-toolbar { display: inline-flex; align-items: center; background: #FFFFFF; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 2px 4px; position: relative; user-select: none; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
-.ars-date-btn-nav { background: transparent; border: none; color: #475569; width: 28px; height: 30px; border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; transition: background 0.15s; }
-.ars-date-btn-nav:hover { background: #F1F5F9; color: #0F172A; }
-.ars-date-trigger { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 4px; cursor: pointer; background: #F8FAFC; border: 1px solid #CBD5E1; transition: all 0.15s ease; margin: 0 2px; }
+.ars-unified-time-node {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  padding: 2px 4px;
+  position: relative;
+  overflow: visible !important;
+}
+
+.ars-date-toolbar { display: inline-flex; align-items: center; background: transparent; border: none; border-radius: 6px; padding: 0; position: relative; user-select: none; overflow: visible !important; }
+.ars-date-btn-nav { background: #FFFFFF; border: 1px solid #CBD5E1; color: #475569; width: 26px; height: 28px; border-radius: 5px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; transition: all 0.15s; }
+.ars-date-btn-nav:hover { background: #EFF6FF; border-color: #93C5FD; color: #1D4ED8; }
+.ars-date-trigger { display: flex; align-items: center; gap: 5px; padding: 4px 10px; height: 28px; border-radius: 5px; cursor: pointer !important; background: #FFFFFF; border: 1px solid #CBD5E1; transition: all 0.15s ease; margin: 0 2px; user-select: none; }
 .ars-date-trigger:hover, .ars-date-trigger.active { background: #EFF6FF; border-color: #3B82F6; }
-.ars-date-today-btn { background: #F1F5F9; border: 1px solid #CBD5E1; color: #334155; font-size: 11px; font-weight: 700; padding: 5px 9px; border-radius: 4px; cursor: pointer; margin-left: 2px; }
-.ars-date-today-btn:hover { background: #E2E8F0; color: #0F172A; }
-.ars-calendar-popover { position: absolute; top: calc(100% + 6px); left: 0; width: 320px; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 10px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22); padding: 14px; z-index: 9999; }
+.ars-date-today-btn { background: #FFFFFF; border: 1px solid #CBD5E1; color: #334155; font-size: 11px; font-weight: 700; padding: 0 8px; height: 28px; border-radius: 5px; cursor: pointer; margin-left: 2px; transition: all 0.15s; }
+.ars-date-today-btn:hover { background: #EFF6FF; border-color: #93C5FD; color: #1D4ED8; }
+.ars-calendar-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 360px;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(15, 34, 61, 0.22);
+  padding: 14px;
+  z-index: 99999 !important;
+}
 .cal-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 12px; }
 .cal-select-group { display: flex; gap: 6px; flex: 1; }
 .cal-select { background: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 5px; padding: 5px 8px; font-size: 12px; font-weight: 700; color: #0F172A; cursor: pointer; outline: none; flex: 1; }
 .cal-nav-month { background: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 5px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; color: #334155; }
+.cal-nav-month:hover { background: #EFF6FF; border-color: #93C5FD; color: #1D4ED8; }
 .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; margin-bottom: 6px; border-bottom: 1px solid #E2E8F0; padding-bottom: 6px; }
 .cal-weekday { font-size: 10px; font-weight: 800; color: #64748B; text-transform: uppercase; }
 .cal-weekday.weekend { color: #DC2626; }
 .cal-days-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-.cal-day { height: 34px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #1E293B; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.12s; }
+.cal-day { height: 32px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #1E293B; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.12s; }
 .cal-day:hover { background: #EFF6FF; border-color: #93C5FD; color: #1D4ED8; }
 .cal-day.other-month { color: #CBD5E1; font-weight: 400; }
-.cal-day.weekend:not(.other-month):not(.selected) { color: #DC2626; }
+.cal-day.weekend:not(.other-month):not(.selected):not(.in-range) { color: #DC2626; }
 .cal-day.today { border: 1.5px dashed #3B82F6; font-weight: 800; color: #1D4ED8; }
+.cal-day.in-range { background: #DBEAFE !important; color: #1E3A8A !important; font-weight: 700; border-color: #BFDBFE; border-radius: 4px; }
 .cal-day.selected { background: #1B365D !important; color: #FFFFFF !important; font-weight: 800; border-color: #1B365D; }
 .cal-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid #E2E8F0; }
 .cal-quick-btns { display: flex; gap: 4px; }
 .cal-quick-btn { background: #F1F5F9; border: 1px solid #CBD5E1; color: #475569; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
 .cal-quick-btn:hover { background: #E2E8F0; color: #0F172A; }
 .cal-close-btn { background: transparent; border: none; color: #64748B; font-size: 11px; font-weight: 700; cursor: pointer; padding: 4px 6px; }
+.cal-apply-btn {
+  background: linear-gradient(135deg, #1B365D, #2563EB);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(27, 54, 93, 0.25);
+}
+.cal-apply-btn:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
 
-/* Панель выбора периода, фильтрации разделов и срезов данных */
+/* Однострочная панель фильтров и минималистичные вкладки (Corporate Control + Industrial Command Center) */
 .ars-filter-panel {
   background: #FFFFFF;
   border: 1px solid #CBD5E1;
   border-radius: 12px;
-  padding: 16px 20px;
-  box-shadow: 0 2px 6px -1px rgba(15, 23, 42, 0.05);
+  padding: 10px 14px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
+  position: relative;
+  overflow: visible !important;
 }
 
-.ars-filter-row {
+.ars-single-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  overflow: visible !important;
+}
+
+.ars-underline-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid #E2E8F0;
+  padding: 0 4px;
+}
+
+.ars-underline-tab {
+  position: relative;
+  padding: 10px 4px 12px 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #64748B;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-bottom: -1px;
+}
+
+.ars-underline-tab:hover {
+  color: #0F172A;
+}
+
+.ars-underline-tab.active {
+  color: #2563EB;
+  font-weight: 700;
+  border-bottom-color: #2563EB;
+}
+
+.ars-control-row-1 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #E2E8F0;
+  overflow: visible !important;
+}
+
+.ars-control-row-2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  position: relative;
+  overflow: visible !important;
 }
 
 .ars-mode-switcher {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   background: #F1F5F9;
-  border: 1px solid #CBD5E1;
+  border: 1px solid #E2E8F0;
   border-radius: 8px;
   padding: 3px;
-  gap: 3px;
+  gap: 4px;
 }
 
 .ars-mode-btn {
+  flex: 1;
   border: none;
   background: transparent;
   color: #475569;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
-  padding: 6px 12px;
+  padding: 6px 10px;
+  height: 30px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
 }
 
 .ars-mode-btn:hover {
   color: #0F172A;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .ars-mode-btn.active {
   background: #1B365D;
   color: #FFFFFF;
-  box-shadow: 0 1px 3px rgba(27, 54, 93, 0.25);
-}
-
-.ars-period-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  background: #F8FAFC;
-  border: 1px solid #CBD5E1;
-  border-radius: 8px;
-  padding: 6px 12px;
-}
-
-.ars-period-input-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #334155;
+  box-shadow: 0 2px 5px rgba(27, 54, 93, 0.25);
 }
 
 .ars-period-input {
   background: #FFFFFF;
   border: 1px solid #CBD5E1;
   border-radius: 5px;
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 3px 6px;
+  font-size: 11.5px;
   font-weight: 700;
   color: #0F172A;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
-.ars-preset-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin-left: 4px;
-  padding-left: 8px;
-  border-left: 1px solid #CBD5E1;
 }
 
 .ars-preset-btn {
@@ -884,7 +976,7 @@
   color: #334155;
   font-size: 11px;
   font-weight: 700;
-  padding: 4px 9px;
+  padding: 3px 7px;
   border-radius: 5px;
   cursor: pointer;
   transition: all 0.12s ease;
@@ -906,34 +998,30 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding-top: 10px;
-  border-top: 1px solid #E2E8F0;
-}
-
-.ars-section-toggle-label {
-  font-size: 11px;
-  font-weight: 800;
-  color: #64748B;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-right: 4px;
+  gap: 5px;
 }
 
 .ars-section-checkbox-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
+  gap: 4px;
+  padding: 4px 9px;
+  height: 28px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   user-select: none;
   border: 1px solid #CBD5E1;
   background: #F8FAFC;
-  color: #475569;
+  color: #64748B;
   transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.ars-section-checkbox-pill:hover {
+  border-color: #94A3B8;
+  color: #0F172A;
 }
 
 .ars-section-checkbox-pill.checked {
@@ -944,43 +1032,17 @@
 
 .ars-section-checkbox-pill input[type="checkbox"] {
   accent-color: #1B365D;
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   cursor: pointer;
 }
 
-.ars-criteria-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #E2E8F0;
-}
-
-@media (max-width: 1024px) {
-  .ars-criteria-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .ars-criteria-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.ars-criteria-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.ars-criteria-item label {
-  font-size: 11px;
-  font-weight: 700;
-  color: #475569;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+.ars-quick-search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 245px;
+  flex: 0 1 275px;
 }
 
 .ars-criteria-select,
@@ -988,7 +1050,8 @@
   background: #F8FAFC;
   border: 1px solid #CBD5E1;
   border-radius: 6px;
-  padding: 7px 10px;
+  padding: 5px 10px;
+  height: 30px;
   font-size: 12px;
   font-weight: 600;
   color: #0F172A;
@@ -1002,3 +1065,79 @@
   background: #FFFFFF;
   border-color: #1B365D;
 }
+
+/* Плавающая кнопка-стрелка «Наверх» при скроллинге */
+.ars-scroll-top-btn {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 99999;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #1B365D, #2563EB);
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(15, 34, 61, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.25s ease;
+  outline: none;
+}
+
+.ars-scroll-top-btn.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.ars-scroll-top-btn:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 8px 22px rgba(15, 34, 61, 0.45);
+}
+
+.ars-scroll-top-btn:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+.ars-scroll-top-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 50%;
+  transform: translateX(50%) translateY(4px);
+  background: #0F223D;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.ars-scroll-top-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #0F223D transparent transparent transparent;
+}
+
+.ars-scroll-top-btn:hover .ars-scroll-top-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(50%) translateY(0);
+}
+

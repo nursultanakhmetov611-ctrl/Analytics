@@ -20,6 +20,7 @@ const STORAGE_KEY_AUTH = 'ars_auth_session_2026_v1';
 interface KpiPresetItem {
   label: string;
   plan: number;
+  planPctNum: number;
   planSub: string;
   fact: number;
   pct: string;
@@ -39,87 +40,92 @@ const BRANCH_KPI_PRESETS: Record<string, KpiPresetItem> = {
   ALL: {
     label: 'Холдинг АРС (Астана)',
     plan: 690,
-    planSub: 'Плановый: 630 · ТОР: 60',
+    planPctNum: 64.9,
+    planSub: 'Выполнение плана: 64,9%',
     fact: 448,
-    pct: '64.9%',
-    factSub: 'ДР: 305 · КР: 79 · ТОР: 64',
+    pct: '64,9%',
+    factSub: 'к плану 690 ваг.',
     variance: -242,
-    varSub: 'Плановый: -246 · ТОР: +4',
+    varSub: 'План: 690 | Факт: 448',
     ktt: 223,
     own: 161,
-    parkSub: 'КТТ: 223 · Собств: 161',
+    parkSub: 'КТТ: 223 | Собственный: 161',
     unfinished: 21,
-    unfinishedSub: 'АВРД: 14 · УВРД: 3 · БВРД: 2 · КВРД: 2',
+    unfinishedSub: 'Требует внимания',
     ytd: '5 058',
-    ytdSub: 'Плановый: 4 131 · ТОР: 927',
+    ytdSub: 'План: 4 100 | +958',
   },
   AVRD: {
     label: 'Арысское ВРД (АВРД)',
     plan: 280,
-    planSub: 'Плановый: 260 · ТОР: 20',
+    planPctNum: 72.1,
+    planSub: 'Выполнение плана: 72,1%',
     fact: 202,
-    pct: '72.1%',
-    factSub: 'ДР: 138 · КР: 45 · ТОР: 19',
+    pct: '72,1%',
+    factSub: 'к плану 280 ваг.',
     variance: -78,
-    varSub: 'Плановый: -77 · ТОР: -1',
+    varSub: 'План: 280 | Факт: 202',
     ktt: 98,
     own: 85,
-    parkSub: 'КТТ: 98 · Собств: 85',
+    parkSub: 'КТТ: 98 | Собственный: 85',
     unfinished: 14,
-    unfinishedSub: 'ДР: 4 · КР: 10',
+    unfinishedSub: 'Требует внимания',
     ytd: '1 940',
-    ytdSub: 'Филиал AVRD',
+    ytdSub: 'План: 1 650 | +290',
   },
   KVRD: {
     label: 'Кушмурунское ВРД (КВРД)',
     plan: 201,
-    planSub: 'Плановый: 181 · ТОР: 20',
+    planPctNum: 59.7,
+    planSub: 'Выполнение плана: 59,7%',
     fact: 120,
-    pct: '59.7%',
-    factSub: 'ДР: 78 · КР: 19 · ТОР: 23',
+    pct: '59,7%',
+    factSub: 'к плану 201 ваг.',
     variance: -81,
-    varSub: 'Плановый: -84 · ТОР: +3',
+    varSub: 'План: 201 | Факт: 120',
     ktt: 79,
     own: 18,
-    parkSub: 'КТТ: 79 · Собств: 18',
+    parkSub: 'КТТ: 79 | Собственный: 18',
     unfinished: 2,
-    unfinishedSub: 'ДР: 1 · КР: 1',
+    unfinishedSub: 'Требует внимания',
     ytd: '1 520',
-    ytdSub: 'Филиал KVRD',
+    ytdSub: 'План: 1 250 | +270',
   },
   BVRD: {
     label: 'Балхашское ВРД (БВРД)',
     plan: 89,
-    planSub: 'Плановый: 79 · ТОР: 10',
+    planPctNum: 57.3,
+    planSub: 'Выполнение плана: 57,3%',
     fact: 51,
-    pct: '57.3%',
-    factSub: 'ДР: 34 · КР: 8 · ТОР: 9',
+    pct: '57,3%',
+    factSub: 'к плану 89 ваг.',
     variance: -38,
-    varSub: 'Плановый: -37 · ТОР: -1',
+    varSub: 'План: 89 | Факт: 51',
     ktt: 24,
     own: 18,
-    parkSub: 'КТТ: 24 · Собств: 18',
+    parkSub: 'КТТ: 24 | Собственный: 18',
     unfinished: 2,
-    unfinishedSub: 'ДР: 1 · КР: 1',
+    unfinishedSub: 'Требует внимания',
     ytd: '718',
-    ytdSub: 'Выполнено филиалом',
+    ytdSub: 'План: 550 | +168',
   },
   UVRD: {
     label: 'Уральское ВРД (УВРД)',
     plan: 120,
-    planSub: 'Плановый: 110 · ТОР: 10',
+    planPctNum: 62.5,
+    planSub: 'Выполнение плана: 62,5%',
     fact: 75,
-    pct: '62.5%',
-    factSub: 'ДР: 55 · КР: 7 · ТОР: 13',
+    pct: '62,5%',
+    factSub: 'к плану 120 ваг.',
     variance: -45,
-    varSub: 'Плановый: -48 · ТОР: +3',
+    varSub: 'План: 120 | Факт: 75',
     ktt: 22,
     own: 40,
-    parkSub: 'КТТ: 22 · Собств: 40',
+    parkSub: 'КТТ: 22 | Собственный: 40',
     unfinished: 3,
-    unfinishedSub: 'ДР: 2 · ТОР: 1',
+    unfinishedSub: 'Требует внимания',
     ytd: '880',
-    ytdSub: 'Филиал UVRD',
+    ytdSub: 'План: 650 | +230',
   },
 };
 
@@ -238,6 +244,29 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('daily');
   const [selectedWagonNumber, setSelectedWagonNumber] = useState<string>('52509312');
   const [isQuerying, setIsQuerying] = useState<boolean>(false);
+  const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleWindowScroll = () => {
+      const currentScroll =
+        window.scrollY ||
+        window.pageYOffset ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0;
+      setShowScrollTop(currentScroll > 70);
+    };
+
+    handleWindowScroll();
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleWindowScroll);
+    };
+  }, []);
+
+  const handleScrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   // Active RBAC User Session (null when not logged in -> opens #modalLogin)
   const [currentUser, setCurrentUser] = useState<ArsAuthSession | null>(() => {
@@ -518,22 +547,66 @@ export default function App() {
     ? (currentUser.depot_code || 'BVRD').toUpperCase()
     : 'ALL';
 
+  const [headerDateText, setHeaderDateText] = useState<string>(() => {
+    const monthsGenitive = [
+      'января',
+      'февраля',
+      'марта',
+      'апреля',
+      'мая',
+      'июня',
+      'июля',
+      'августа',
+      'сентября',
+      'октября',
+      'ноября',
+      'декабря',
+    ];
+    const now = new Date();
+    return `${now.getDate()} ${monthsGenitive[now.getMonth()]} ${now.getFullYear()}`;
+  });
+
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).updateHeaderDateLabel = (isoStr: string) => {
+      const monthsGenitive = [
+        'января',
+        'февраля',
+        'марта',
+        'апреля',
+        'мая',
+        'июня',
+        'июля',
+        'августа',
+        'сентября',
+        'октября',
+        'ноября',
+        'декабря',
+      ];
+      const parts = isoStr.split('-').map(Number);
+      if (parts.length === 3 && !parts.some(Number.isNaN)) {
+        const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+        setHeaderDateText(`${dt.getDate()} ${monthsGenitive[dt.getMonth()]} ${dt.getFullYear()}`);
+      }
+    };
+  }, []);
+
   const currentKpi = BRANCH_KPI_PRESETS[activeDepotKey] || {
     label: currentUser?.display_name || `Филиал ${activeDepotKey}`,
     plan: 89,
-    planSub: 'Плановый: 79 · ТОР: 10',
+    planPctNum: 57.3,
+    planSub: 'Выполнение плана: 57,3%',
     fact: 51,
-    pct: '57.3%',
-    factSub: 'ДР: 34 · КР: 8 · ТОР: 9',
+    pct: '57,3%',
+    factSub: 'к плану 89 ваг.',
     variance: -38,
-    varSub: 'Плановый: -37 · ТОР: -1',
+    varSub: 'План: 89 | Факт: 51',
     ktt: 24,
     own: 18,
-    parkSub: 'КТТ: 24 · Собств: 18',
+    parkSub: 'КТТ: 24 | Собственный: 18',
     unfinished: 2,
-    unfinishedSub: 'ДР: 1 · КР: 1',
+    unfinishedSub: 'Требует внимания',
     ytd: '718',
-    ytdSub: `Филиал ${activeDepotKey}`,
+    ytdSub: 'План: 550 | +168',
   };
 
   const updateShiftMasterKpi = useCallback(
@@ -543,15 +616,15 @@ export default function App() {
           ? currentUser.depot_code
           : typeof window.currentDepot !== 'undefined' && window.currentDepot
           ? window.currentDepot
-          : 'BVRD';
-      const d = (depotCode || fallbackDepot || 'BVRD').toUpperCase();
+          : 'ALL';
+      const d = (depotCode || fallbackDepot || 'ALL').toUpperCase();
 
       const depotLabels =
         typeof window.DEPOT_LABELS !== 'undefined' && window.DEPOT_LABELS
           ? window.DEPOT_LABELS
           : {};
       const refDep = references.depots.find((item) => item.code.toUpperCase() === d);
-      const preset = BRANCH_KPI_PRESETS[d] || BRANCH_KPI_PRESETS.BVRD;
+      const preset = BRANCH_KPI_PRESETS[d] || BRANCH_KPI_PRESETS.ALL;
 
       const dName =
         d === 'ALL'
@@ -561,7 +634,7 @@ export default function App() {
       // Обновление бейджей и заголовка
       const badgeDepot = document.getElementById('kpiDepotBadge');
       if (badgeDepot) {
-        badgeDepot.textContent = dName.includes('(') ? `🏭 ${dName}` : `🏭 ${dName} (${d})`;
+        badgeDepot.textContent = dName;
       }
 
       const badgeCode = document.getElementById('kpiCodeBadge');
@@ -573,8 +646,8 @@ export default function App() {
       if (titleEl) {
         titleEl.textContent =
           d === 'ALL'
-            ? 'Ситуационный центр и интеллектуальный аналитик ремонта грузовых вагонов (2026 г.)'
-            : `Автоматизированное рабочее место мастера смены — ${dName}`;
+            ? 'Ситуационный центр ремонта грузовых вагонов'
+            : `Ситуационный центр ремонта грузовых вагонов — ${dName}`;
       }
 
       // Обновление численных значений 6 плиток
@@ -599,12 +672,11 @@ export default function App() {
         (customData?.unfinishedSub as string) ?? preset.unfinishedSub
       );
       setElText('kpiValYear', (customData?.ytd as string) ?? preset.ytd);
+      setElText('kpiSubYear', (customData?.ytdSub as string) ?? preset.ytdSub);
 
-      // Обновление подписи года
-      const subYear = document.getElementById('kpiSubYear');
-      if (subYear) {
-        subYear.textContent =
-          d === 'ALL' ? preset.ytdSub : `Филиал ${d}`;
+      const planBar = document.getElementById('kpiPlanProgressBar');
+      if (planBar) {
+        planBar.style.width = `${preset.planPctNum}%`;
       }
     },
     [currentUser, isBranchUser, references.depots]
@@ -619,111 +691,89 @@ export default function App() {
   }, [updateShiftMasterKpi, currentUser, isBranchUser]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
-      {/* Top Bar with References Button, User Session & Logout */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-6 px-6 py-3.5">
-          {/* Zone 1: Single text element wordmark */}
-          <a
-            href="#top"
-            onClick={(e) => {
-              e.preventDefault();
-              setActiveTab('daily');
-            }}
-            className="text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
-          >
-            Astana Railway Services
-          </a>
+    <div className="min-h-screen bg-[#F1F5F9] text-slate-900 flex flex-col">
+      {/* 1. Тёмно-синяя верхняя панель (#17365D, 52px) */}
+      <header
+        className="sticky top-0 z-30 border-b border-[#0F2542]"
+        style={{ background: '#17365D', height: '52px' }}
+      >
+        <div className="max-w-[1440px] h-full mx-auto flex items-center justify-between gap-4 px-6">
+          {/* Бренд + Разделы навигации */}
+          <div className="flex items-center gap-6 min-w-0">
+            <a
+              href="#top"
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveTab('daily');
+              }}
+              className="flex items-center gap-2 text-sm font-extrabold tracking-tight text-white whitespace-nowrap shrink-0"
+            >
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#2563EB] text-white text-xs font-black">
+                АРС
+              </span>
+              <span>Astana Railway Services</span>
+            </a>
 
-          {/* Zone 2: 5 concise single-line text navigation links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-            <button
-              type="button"
-              onClick={() => setActiveTab('daily')}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'daily'
-                  ? 'text-slate-950 font-semibold underline decoration-blue-600 decoration-2 underline-offset-8'
-                  : 'hover:text-slate-900'
-              }`}
-            >
-              Суточный выпуск
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('analyst')}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'analyst'
-                  ? 'text-slate-950 font-semibold underline decoration-blue-600 decoration-2 underline-offset-8'
-                  : 'hover:text-slate-900'
-              }`}
-            >
-              ИИ-Аналитик
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('plans')}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'plans'
-                  ? 'text-slate-950 font-semibold underline decoration-blue-600 decoration-2 underline-offset-8'
-                  : 'hover:text-slate-900'
-              }`}
-            >
-              План и факт
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('dislocation')}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'dislocation'
-                  ? 'text-slate-950 font-semibold underline decoration-blue-600 decoration-2 underline-offset-8'
-                  : 'hover:text-slate-900'
-              }`}
-            >
-              Дислокация вагонов
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('wheelsets')}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'wheelsets'
-                  ? 'text-slate-950 font-semibold underline decoration-blue-600 decoration-2 underline-offset-8'
-                  : 'hover:text-slate-900'
-              }`}
-            >
-              Колёсные пары
-            </button>
-          </nav>
+            <nav className="hidden md:flex items-center gap-1.5 text-xs font-semibold">
+              {[
+                { id: 'daily', label: 'Суточный выпуск' },
+                { id: 'analyst', label: 'ИИ-Аналитик' },
+                { id: 'plans', label: 'План и факт' },
+                { id: 'dislocation', label: 'Дислокация вагонов' },
+                { id: 'wheelsets', label: 'Колёсные пары' },
+              ].map((navItem) => {
+                const isAct = activeTab === navItem.id;
+                return (
+                  <button
+                    key={navItem.id}
+                    type="button"
+                    onClick={() => setActiveTab(navItem.id as ActiveTab)}
+                    style={{
+                      background: isAct ? '#2563EB' : 'transparent',
+                      color: isAct ? '#FFFFFF' : '#CBD5E1',
+                    }}
+                    className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      isAct ? 'font-bold shadow-xs' : 'hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    {navItem.label}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
 
-          {/* Zone 3: Audit Log + References Button + Active User Profile + Logout */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          {/* Правая зона: Журнал, Справочники и Профиль */}
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               id="btnHeaderAuditLog"
-              className="btn btn-secondary"
               onClick={() => window.openAuditLogModal?.('devlog')}
+              className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-200 bg-white/10 hover:bg-white/20 border border-white/15 transition-colors cursor-pointer whitespace-nowrap"
               title="Журнал системы и Чёрный ящик разработчика (Flight Recorder)"
             >
-              📜 Журнал системы
+              Журнал системы
             </button>
 
             <button
               ref={headerRefBtn}
-              className="btn btn-secondary"
+              type="button"
               onClick={() => window.openReferencesModal?.()}
+              className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-200 bg-white/10 hover:bg-white/20 border border-white/15 transition-colors cursor-pointer whitespace-nowrap"
               title="Управление справочниками"
             >
-              ⚙️ Справочники
+              Справочники
             </button>
 
             {currentUser && (
-              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-                <div className="hidden xl:flex items-center gap-1.5 text-xs">
+              <div className="flex items-center gap-2 pl-2 border-l border-white/20">
+                <div className="hidden xl:flex items-center gap-1.5 text-xs text-slate-200">
                   {currentUser.role === 'headquarters' ? (
-                    <ShieldCheck className="w-3.5 h-3.5 text-[#1B365D]" />
+                    <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
                   ) : (
-                    <Building2 className="w-3.5 h-3.5 text-emerald-700" />
+                    <Building2 className="w-3.5 h-3.5 text-emerald-400" />
                   )}
-                  <span className="font-semibold text-slate-900 whitespace-nowrap">
+                  <span className="font-semibold text-white whitespace-nowrap">
                     {currentUser.display_name}
                   </span>
                 </div>
@@ -731,7 +781,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="btn btn-secondary !px-2.5 !py-1.5 text-xs text-slate-700 hover:text-red-700"
+                  className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-200 bg-white/10 hover:bg-red-600/80 hover:text-white border border-white/15 transition-colors cursor-pointer flex items-center gap-1"
                   title={`Выйти из учётной записи (${currentUser.username})`}
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -744,102 +794,110 @@ export default function App() {
       </header>
 
       {/* Main Content Container */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-6 py-6 space-y-6">
-        {/* Презентабельная светлая KPI-панель мастера смены */}
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-6 py-5 space-y-5">
+        {/* 2 & 3. Заголовок «Ситуационный центр ремонта грузовых вагонов» + 6 KPI-карточек в один ряд */}
         <div className="kpi-banner-container" id="bannerKpi">
-          {/* Шапка карточки */}
-          <div className="kpi-banner-header flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="kpi-header-info">
-              <div className="kpi-badge-row">
+          {/* Шапка ситуационного центра */}
+          <div className="kpi-banner-header flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="kpi-main-title" id="kpiMainTitle">
+                {isBranchUser
+                  ? `Ситуационный центр ремонта грузовых вагонов — ${currentKpi.label}`
+                  : 'Ситуационный центр ремонта грузовых вагонов'}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="kpi-badge kpi-badge-depot" id="kpiDepotBadge">
-                  🏭 {currentKpi.label}
+                  {currentKpi.label}
                 </span>
                 <span className="kpi-badge kpi-badge-status" id="kpiStatusBadge">
-                  <span className="kpi-dot-pulse"></span>
-                  <span>
-                    {isBranchUser
-                      ? 'Изолированный контур филиала'
-                      : 'Производственный отдел (Головной офис · Астана)'}
-                  </span>
+                  {isBranchUser ? 'Контур филиала' : 'Производственный отдел'}
                 </span>
-                <span className="kpi-badge kpi-badge-code" id="kpiCodeBadge">
+                <span className="sr-only" id="kpiCodeBadge">
                   Депо: {activeDepotKey}
                 </span>
               </div>
-              <h2 className="kpi-main-title" id="kpiMainTitle">
-                {isBranchUser
-                  ? `Автоматизированное рабочее место мастера смены — ${currentKpi.label}`
-                  : 'Ситуационный центр и интеллектуальный аналитик ремонта грузовых вагонов (2026 г.)'}
-              </h2>
             </div>
 
-            {/* Mobile Tab Switcher */}
-            <div className="flex md:hidden flex-wrap gap-1 p-1 bg-slate-100 rounded-lg">
-              {[
-                { id: 'daily', label: 'Суточный' },
-                { id: 'analyst', label: 'ИИ-Аналитик' },
-                { id: 'plans', label: 'План/Факт' },
-                { id: 'dislocation', label: 'Дислокация' },
-                { id: 'wheelsets', label: 'Колёсные пары' },
-              ].map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveTab(t.id as ActiveTab)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded ${
-                    activeTab === t.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              {/* Интерактивный выбор даты справа в заголовке */}
+              <button
+                type="button"
+                id="headerDateSelectorBtn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (activeTab !== 'daily') {
+                    setActiveTab('daily');
+                    setTimeout(() => window.toggleCalendarPopover?.(e), 50);
+                  } else {
+                    window.toggleCalendarPopover?.(e);
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-300 hover:border-blue-400 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                title="Открыть календарь выбора даты или периода"
+              >
+                <span>📅</span>
+                <span id="headerDateLabelText">{headerDateText}</span>
+                <span className="text-[10px] text-slate-500">▾</span>
+              </button>
             </div>
           </div>
 
-          {/* Сетка из 6 чётких плиток KPI */}
+          {/* 3. 6 KPI-карточек в один ряд */}
           <div className="kpi-grid">
-            {/* Плитка 1: План на месяц */}
+            {/* Карточка 1: План на месяц: 690 ваг. (прогресс-бар, «Выполнение плана: 64,9%») */}
             <div className="kpi-card">
               <div className="kpi-card-label">План на месяц</div>
               <div className="kpi-card-value">
                 <span id="kpiValPlan">{currentKpi.plan}</span>
                 <span className="kpi-unit">ваг.</span>
               </div>
+              <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden my-1.5">
+                <div
+                  id="kpiPlanProgressBar"
+                  className="h-full bg-[#2563EB] rounded-full transition-all duration-300"
+                  style={{ width: `${currentKpi.planPctNum}%` }}
+                />
+              </div>
               <div className="kpi-card-sub" id="kpiSubPlan">
                 {currentKpi.planSub}
               </div>
             </div>
 
-            {/* Плитка 2: Факт выполнения (Небесно-голубая) */}
-            <div className="kpi-card kpi-card-fact">
-              <div className="kpi-card-label text-sky">Факт за месяц</div>
+            {/* Карточка 2: Факт за месяц: 448 ваг. (зелёный бейдж 64,9%, «к плану 690 ваг.») */}
+            <div className="kpi-card">
+              <div className="kpi-card-label">Факт за месяц</div>
               <div className="kpi-card-value">
                 <span id="kpiValFact">{currentKpi.fact}</span>
                 <span className="kpi-unit">ваг.</span>
-                <span className="kpi-pill kpi-pill-blue" id="kpiFactPercent">
+                <span
+                  id="kpiFactPercent"
+                  className="ml-1.5 px-1.5 py-0.5 text-[11px] font-extrabold rounded bg-emerald-100 text-emerald-800 border border-emerald-200"
+                >
                   {currentKpi.pct}
                 </span>
               </div>
-              <div className="kpi-card-sub text-sky-sub" id="kpiSubFact">
+              <div className="kpi-card-sub" id="kpiSubFact">
                 {currentKpi.factSub}
               </div>
             </div>
 
-            {/* Плитка 3: Отклонение от плана (Контрастно-розовая) */}
-            <div className="kpi-card kpi-card-danger">
-              <div className="kpi-card-label text-danger">Отклонение</div>
-              <div className="kpi-card-value text-danger">
+            {/* Карточка 3: Отклонение: -242 ваг. (красный жирный #DC2626, «План: 690 | Факт: 448») */}
+            <div className="kpi-card">
+              <div className="kpi-card-label">Отклонение</div>
+              <div className="kpi-card-value" style={{ color: '#DC2626', fontWeight: 800 }}>
                 <span id="kpiValDev">{currentKpi.variance}</span>
-                <span className="kpi-unit text-danger">ваг.</span>
+                <span className="kpi-unit" style={{ color: '#DC2626' }}>
+                  ваг.
+                </span>
               </div>
-              <div className="kpi-card-sub text-danger-sub" id="kpiSubDev">
+              <div className="kpi-card-sub" id="kpiSubDev">
                 {currentKpi.varSub}
               </div>
             </div>
 
-            {/* Плитка 4: Парк КТТ / Собственники */}
+            {/* Карточка 4: Парк КТТ / собственный: 223 / 161 ваг. («КТТ: 223 | Собственный: 161») */}
             <div className="kpi-card">
-              <div className="kpi-card-label">Парк КТТ / Собств.</div>
+              <div className="kpi-card-label">Парк КТТ / собственный</div>
               <div className="kpi-card-value">
                 <span id="kpiValKTT">{currentKpi.ktt}</span>
                 <span className="kpi-divider">/</span>
@@ -851,26 +909,38 @@ export default function App() {
               </div>
             </div>
 
-            {/* Плитка 5: Неоконченный ремонт (Янтарно-предупреждающая) */}
-            <div className="kpi-card kpi-card-warning">
-              <div className="kpi-card-label text-warning">Неоконч. ремонт</div>
-              <div className="kpi-card-value text-warning">
+            {/* Карточка 5: Незавершённый ремонт: 21 ваг. (янтарный #D97706, «Требует внимания») */}
+            <div className="kpi-card">
+              <div className="kpi-card-label">Незавершённый ремонт</div>
+              <div className="kpi-card-value" style={{ color: '#D97706', fontWeight: 800 }}>
                 <span id="kpiValUnfinished">{currentKpi.unfinished}</span>
-                <span className="kpi-unit text-warning">ваг.</span>
+                <span className="kpi-unit" style={{ color: '#D97706' }}>
+                  ваг.
+                </span>
               </div>
-              <div className="kpi-card-sub text-warning-sub" id="kpiSubUnfinished">
+              <div
+                className="kpi-card-sub"
+                id="kpiSubUnfinished"
+                style={{ color: '#B45309', fontWeight: 700 }}
+              >
                 {currentKpi.unfinishedSub}
               </div>
             </div>
 
-            {/* Плитка 6: Выпуск с начала года (Изумрудно-зелёная) */}
-            <div className="kpi-card kpi-card-success">
-              <div className="kpi-card-label text-success">Выпуск с начала года</div>
-              <div className="kpi-card-value text-success">
+            {/* Карточка 6: Выпуск с начала года: 5 058 ваг. (зелёный #16A34A, «План: 4 100 | +958») */}
+            <div className="kpi-card">
+              <div className="kpi-card-label">Выпуск с начала года</div>
+              <div className="kpi-card-value" style={{ color: '#16A34A', fontWeight: 800 }}>
                 <span id="kpiValYear">{currentKpi.ytd}</span>
-                <span className="kpi-unit text-success">ваг.</span>
+                <span className="kpi-unit" style={{ color: '#16A34A' }}>
+                  ваг.
+                </span>
               </div>
-              <div className="kpi-card-sub text-success-sub" id="kpiSubYear">
+              <div
+                className="kpi-card-sub"
+                id="kpiSubYear"
+                style={{ color: '#15803D', fontWeight: 700 }}
+              >
                 {currentKpi.ytdSub}
               </div>
             </div>
@@ -1003,6 +1073,34 @@ export default function App() {
         references={references}
         onLoginSuccess={handleLoginSuccess}
       />
+
+      {/* Плавающая кнопка-стрелка «Наверх» при скроллинге */}
+      <button
+        type="button"
+        id="btnScrollToTop"
+        onClick={handleScrollToTop}
+        className={`ars-scroll-top-btn ${showScrollTop ? 'visible' : ''}`}
+        title="Наверх"
+        aria-label="Наверх"
+      >
+        <span className="ars-scroll-top-tooltip" role="tooltip">
+          Наверх
+        </span>
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#FFFFFF"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M12 19V5" />
+          <path d="m5 12 7-7 7 7" />
+        </svg>
+      </button>
     </div>
   );
 }
