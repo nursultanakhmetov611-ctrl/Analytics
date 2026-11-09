@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ArrowUpRight, AlertTriangle } from 'lucide-react';
+import { Search, ArrowUpRight, AlertTriangle, Download } from 'lucide-react';
 import { ArsDataset, WagonDislocationRow } from '../types/ars';
 import { StallReasonsMatrix } from './StallReasonsMatrix';
+import { exportDislocationToCsv } from '../utils/arsEngine';
 
 interface DislocationViewProps {
   data: ArsDataset;
@@ -252,15 +253,26 @@ export const DislocationView: React.FC<DislocationViewProps> = ({
               </p>
             </div>
 
-            <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск по № вагона, заказчику, пути..."
-                className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:outline-none rounded-lg text-slate-900"
-              />
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Поиск по № вагона, заказчику, пути..."
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:outline-none rounded-lg text-slate-900"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => exportDislocationToCsv(filteredWagons)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                title="Экспорт отфильтрованного списка в CSV (Excel)"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-600" />
+                <span>CSV</span>
+              </button>
             </div>
           </div>
 

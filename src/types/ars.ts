@@ -284,6 +284,7 @@ declare global {
     OCTOBER_2026_DATA?: Record<string, unknown>;
     loadCurrentBranchReport?: (depotCode?: string, dateStr?: string) => void;
     calcBranchMatrix?: () => void;
+    updateHeaderDateLabel?: (isoDate: string) => void;
   }
 }
 

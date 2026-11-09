@@ -21,9 +21,9 @@ interface DailyOutputViewProps {
   onAskAnalyst: (prompt: string) => void;
 }
 
-const STORAGE_KEY_SHIFT_WAGONS = 'ars_daily_shift_wagons_oct2026_v2';
-const STORAGE_KEY_SHIFT_KP = 'ars_daily_shift_kp_oct2026_v2';
-const STORAGE_KEY_HQ_STATUS = 'ars_daily_hq_status_2026_v1';
+const STORAGE_KEY_SHIFT_WAGONS = 'ars_daily_shift_wagons_oct2026_v3';
+const STORAGE_KEY_SHIFT_KP = 'ars_daily_shift_kp_oct2026_v3';
+const STORAGE_KEY_HQ_STATUS = 'ars_daily_hq_status_2026_v2';
 
 export interface OctoberFactGroup {
   cust: string;
@@ -158,11 +158,47 @@ function generateRealisticWagonNumber(
   return String(60100000 + (offset % 8800000));
 }
 
-// Формирование пономерного списка вагонов из OCTOBER_2026_DATA для выбранной даты октября
-export function buildOctober2026WagonsForDate(isoDate = '2026-10-21'): ShiftWagonRow[] {
-  const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(isoDate) ? isoDate : '2026-10-21';
-  const isOct2026 = cleanDate.startsWith('2026-10-');
-  const dayNum = isOct2026 ? parseInt(cleanDate.slice(8, 10), 10) : 21;
+function getTodayIsoDateString(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+const EXTRA_OCTOBER_RELEASE: Record<number, [number, number, number, number]> = {
+  22: [12, 2, 6, 4],
+  23: [10, 5, 5, 7],
+  24: [11, 3, 7, 6],
+  25: [9, 4, 6, 5],
+  26: [8, 3, 4, 0],
+  27: [10, 3, 5, 6],
+  28: [11, 4, 6, 5],
+  29: [9, 2, 7, 4],
+  30: [12, 3, 5, 7],
+  31: [8, 4, 6, 5],
+};
+
+function getReleaseTupleForDate(isoDate: string): [number, number, number, number] {
+  const parts = isoDate.split('-').map(Number);
+  const dayNum = parts[2] || 26;
+  if (OCTOBER_2026_DATA.daily_release[dayNum]) {
+    return OCTOBER_2026_DATA.daily_release[dayNum];
+  }
+  if (EXTRA_OCTOBER_RELEASE[dayNum]) {
+    return EXTRA_OCTOBER_RELEASE[dayNum];
+  }
+  const fallbackDay = ((Math.abs(dayNum) - 1) % 21) + 1;
+  return OCTOBER_2026_DATA.daily_release[fallbackDay] || [8, 3, 4, 0];
+}
+
+// Формирование пономерного списка вагонов из OCTOBER_2026_DATA для выбранной даты
+export function buildOctober2026WagonsForDate(isoDate?: string): ShiftWagonRow[] {
+  const fallbackToday = getTodayIsoDateString();
+  const cleanDate = isoDate && /^\d{4}-\d{2}-\d{2}$/.test(isoDate) ? isoDate : fallbackToday;
+  const parts = cleanDate.split('-').map(Number);
+  const dayNum = parts[2] || 26;
+  const releaseTuple = getReleaseTupleForDate(cleanDate);
 
   const rows: ShiftWagonRow[] = [];
   let globalSeq = 1;
@@ -175,7 +211,7 @@ export function buildOctober2026WagonsForDate(isoDate = '2026-10-21'): ShiftWago
     fact.waiting.forEach((grp) => {
       for (let i = 0; i < grp.cnt; i++) {
         rows.push({
-          id: `oct26-${depotCode}-wait-${globalSeq}`,
+          id: `oct26-${cleanDate}-${depotCode}-wait-${globalSeq}`,
           depot_code: depotCode,
           section: 'AT_STATION',
           customer: grp.cust,
@@ -194,7 +230,7 @@ export function buildOctober2026WagonsForDate(isoDate = '2026-10-21'): ShiftWago
     fact.directed.forEach((grp) => {
       for (let i = 0; i < grp.cnt; i++) {
         rows.push({
-          id: `oct26-${depotCode}-dir-${globalSeq}`,
+          id: `oct26-${cleanDate}-${depotCode}-dir-${globalSeq}`,
           depot_code: depotCode,
           section: 'EN_ROUTE',
           customer: grp.cust,
@@ -210,16 +246,16 @@ export function buildOctober2026WagonsForDate(isoDate = '2026-10-21'): ShiftWago
     });
 
     // 3. Выпуск за смену ('RELEASE')
-    if (cleanDate === '2026-10-21' || !OCTOBER_2026_DATA.daily_release[dayNum]) {
-      // На 21.10.2026 используем точную структуру из fact_21_oct.release (15 вагонов: 11 ДР, 3 КР, 1 ТОР)
+    if (dayNum === 21 || dayNum === 26) {
+      // На 21.10.2026 и 26.10.2026 используем эталонную структуру из fact_21_oct.release (15 вагонов: 11 ДР, 3 КР, 1 ТОР)
       fact.release.forEach((grp) => {
         for (let i = 0; i < grp.cnt; i++) {
           rows.push({
-            id: `oct26-${depotCode}-rel-${globalSeq}`,
+            id: `oct26-${cleanDate}-${depotCode}-rel-${globalSeq}`,
             depot_code: depotCode,
             section: 'RELEASE',
             customer: grp.cust,
-            wagon_number: generateRealisticWagonNumber(grp.wt, depotIdx, 3, globalSeq),
+            wagon_number: generateRealisticWagonNumber(grp.wt, depotIdx, 3, globalSeq + dayNum * 7),
             wagon_type: grp.wt,
             repair_type: grp.rep,
             submission_date: cleanDate,
@@ -230,8 +266,8 @@ export function buildOctober2026WagonsForDate(isoDate = '2026-10-21'): ShiftWago
         }
       });
     } else {
-      // Для дат 1..20 октября формируем точное число выпущенных вагонов из daily_release[dayNum][depotIdx]
-      const targetRelCount = OCTOBER_2026_DATA.daily_release[dayNum]?.[depotIdx] ?? 0;
+      // Для выбранного дня формируем точное число выпущенных вагонов из releaseTuple[depotIdx]
+      const targetRelCount = releaseTuple[depotIdx] ?? 0;
       const templates =
         fact.release.length > 0
           ? fact.release
@@ -292,11 +328,15 @@ const BASE_DEPOT_STOCK: Record<'AVRD' | 'BVRD' | 'KVRD' | 'UVRD', Omit<DepotKpSh
   },
 };
 
-export function buildOctober2026KpForDate(isoDate = '2026-10-21'): Record<string, DepotKpShiftData> {
-  const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(isoDate) ? isoDate : '2026-10-21';
-  const isOct2026 = cleanDate.startsWith('2026-10-');
-  const dayNum = isOct2026 ? parseInt(cleanDate.slice(8, 10), 10) : 21;
-  const kpTuple = OCTOBER_2026_DATA.daily_wheel_pairs[dayNum] || [0, 0, 0, 0];
+export function buildOctober2026KpForDate(isoDate?: string): Record<string, DepotKpShiftData> {
+  const fallbackToday = getTodayIsoDateString();
+  const cleanDate = isoDate && /^\d{4}-\d{2}-\d{2}$/.test(isoDate) ? isoDate : fallbackToday;
+  const parts = cleanDate.split('-').map(Number);
+  const dayNum = parts[2] || 26;
+  const kpTuple =
+    OCTOBER_2026_DATA.daily_wheel_pairs[dayNum] ||
+    OCTOBER_2026_DATA.daily_wheel_pairs[((Math.abs(dayNum) - 1) % 21) + 1] ||
+    [0, 0, 11, 0];
 
   const result: Record<string, DepotKpShiftData> = {};
   DEPOT_ORDER.forEach((code, idx) => {
@@ -324,10 +364,12 @@ export function buildOctober2026KpForDate(isoDate = '2026-10-21'): Record<string
 }
 
 function buildInitialShiftWagons(_data?: ArsDataset): ShiftWagonRow[] {
-  return buildOctober2026WagonsForDate('2026-10-21');
+  return buildOctober2026WagonsForDate(getTodayIsoDateString());
 }
 
-const DEFAULT_DEPOT_KP: Record<string, DepotKpShiftData> = buildOctober2026KpForDate('2026-10-21');
+const DEFAULT_DEPOT_KP: Record<string, DepotKpShiftData> = buildOctober2026KpForDate(
+  getTodayIsoDateString()
+);
 
 export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
   data,
@@ -355,13 +397,25 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
   const [wagonSearch, setWagonSearch] = useState<string>('');
   const [historySearch, setHistorySearch] = useState<string>('');
   const [showHistoricalRegistry, setShowHistoricalRegistry] = useState<boolean>(false);
-  const [reportDateValue, setReportDateValue] = useState<string>('2026-10-21');
+  const [selectedDate, setSelectedDate] = useState<string>(() => getTodayIsoDateString());
+  const reportDateValue = selectedDate;
+  const setReportDateValue = setSelectedDate;
 
   // Режим выбора дат: 'daily' (1 день) или 'period' (диапазон дат)
   const [dateMode, setDateMode] = useState<'daily' | 'period'>('daily');
-  const [dateFrom, setDateFrom] = useState<string>('2026-10-01');
-  const [dateTo, setDateTo] = useState<string>('2026-10-21');
-  const [activePreset, setActivePreset] = useState<'7days' | 'thisMonth' | 'lastMonth' | 'ytd' | 'custom'>('thisMonth');
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [dateTo, setDateTo] = useState<string>(() => getTodayIsoDateString());
+  const [activePreset, setActivePreset] = useState<
+    'today' | '7days' | 'thisMonth' | 'lastMonth' | 'ytd' | 'custom'
+  >('thisMonth');
+  const [calViewYear, setCalViewYear] = useState<number>(() => new Date().getFullYear());
+  const [calViewMonth, setCalViewMonth] = useState<number>(() => new Date().getMonth());
+  const [periodPickStep, setPeriodPickStep] = useState<'start' | 'end'>('start');
+  const calendarToolbarRef = useRef<HTMLDivElement | null>(null);
 
   // Фильтр видимости разделов («Какую именно информацию предоставить»)
   const [visibleSections, setVisibleSections] = useState<{
@@ -435,10 +489,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
     [activeSubTab]
   );
 
-  // Пресеты выбора периода: 7 дней, Текущий месяц, Прошлый месяц, С начала года (от эталонной даты 21.10.2026)
+  // Пресеты выбора периода: Сегодня, 7 дней, Текущий месяц, Прошлый месяц, С начала года (от текущей системной даты new Date())
   const applyPeriodPreset = useCallback(
-    (preset: '7days' | 'thisMonth' | 'lastMonth' | 'ytd') => {
-      const refDate = new Date(2026, 9, 21);
+    (preset: 'today' | '7days' | 'thisMonth' | 'lastMonth' | 'ytd') => {
+      const refDate = new Date();
       const fmt = (d: Date) => {
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -449,7 +503,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       let start = new Date(refDate);
       let end = new Date(refDate);
 
-      if (preset === '7days') {
+      if (preset === 'today') {
+        start = new Date(refDate);
+        end = new Date(refDate);
+      } else if (preset === '7days') {
         start.setDate(refDate.getDate() - 6);
       } else if (preset === 'thisMonth') {
         start = new Date(refDate.getFullYear(), refDate.getMonth(), 1);
@@ -466,6 +523,9 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       setDateFrom(fromStr);
       setDateTo(toStr);
       setActivePreset(preset);
+      setCalViewYear(end.getFullYear());
+      setCalViewMonth(end.getMonth());
+      setPeriodPickStep('start');
       window.logSystemAction?.(
         'Выбор периода отчёта',
         `Применён пресет периода (${preset}): с ${fromStr} по ${toStr}`
@@ -476,13 +536,16 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
 
   const setReportDateMode = useCallback((mode: 'daily' | 'period') => {
     setDateMode(mode);
+    setPeriodPickStep('start');
     window.logSystemAction?.(
       'Режим дат отчёта',
       mode === 'daily' ? 'Переключён в суточный режим (1 день)' : 'Переключён в режим за период (диапазон дат)'
     );
   }, []);
 
-  // Shift completion status for the 4 HQ cards
+  const [showFullRepairMatrix, setShowFullRepairMatrix] = useState<boolean>(false);
+
+  // Shift completion status for the 4 HQ cards (default: Ожидает сдачи)
   const [hqStatus, setHqStatus] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_HQ_STATUS);
@@ -491,8 +554,8 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       // ignore
     }
     return {
-      KVRD: true,
-      AVRD: true,
+      KVRD: false,
+      AVRD: false,
       BVRD: false,
       UVRD: false,
     };
@@ -527,6 +590,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
   });
 
   const matrixTableRef = useRef<HTMLTableElement | null>(null);
+  const visibleWagonsRef = useRef<ShiftWagonRow[]>([]);
 
   // Persist shiftWagons, depotKpMap, and hqStatus to localStorage
   useEffect(() => {
@@ -656,10 +720,17 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
 
       const counts: Record<
         string,
-        { w_ktt: number; w_own: number; d_ktt: number; d_own: number }
+        {
+          w_ktt: number;
+          w_own: number;
+          d_ktt: number;
+          d_own: number;
+          r_ktt: number;
+          r_own: number;
+        }
       > = {};
       repairCodes.forEach((code) => {
-        counts[code] = { w_ktt: 0, w_own: 0, d_ktt: 0, d_own: 0 };
+        counts[code] = { w_ktt: 0, w_own: 0, d_ktt: 0, d_own: 0, r_ktt: 0, r_own: 0 };
       });
 
       let totalWagons = 0;
@@ -672,92 +743,150 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       const codesByLenDesc = [...repairCodes].sort((a, b) => b.length - a.length);
 
       const rows = document.querySelectorAll('#wagonsBody tr');
-      rows.forEach((tr) => {
-        if (tr.getAttribute('data-reset-cleared') === 'true') return;
-        const cells = tr.querySelectorAll('td');
-        if (cells.length < 4) return;
+      if (rows.length > 0) {
+        rows.forEach((tr) => {
+          if (tr.getAttribute('data-reset-cleared') === 'true') return;
+          const cells = tr.querySelectorAll('td');
+          if (cells.length < 4) return;
 
-        totalWagons++;
+          totalWagons++;
 
-        // А) Вид ремонта (ДР, ДР-КНР, ДРП, КР, КРП, ТОР, ТОР-КНР и др.)
-        const repSelect = tr.querySelector(
-          '.row-repair, select[name="repair"]'
-        ) as HTMLSelectElement | null;
-        const repVal = (
-          repSelect ? repSelect.value : cells[5]?.textContent?.trim() || 'ДР'
-        )
-          .toUpperCase()
-          .trim();
+          // А) Вид ремонта (ДР, ДР-КНР, ДРП, КР, КРП, ТОР, ТОР-КНР и др.)
+          const repSelect = tr.querySelector(
+            '.row-repair, select[name="repair"]'
+          ) as HTMLSelectElement | null;
+          const repVal = (
+            repSelect ? repSelect.value : cells[5]?.textContent?.trim() || 'ДР'
+          )
+            .toUpperCase()
+            .trim();
 
-        const matchedCode =
-          repairCodes.find((c) => c.toUpperCase() === repVal) ||
-          codesByLenDesc.find((c) => repVal.startsWith(c.toUpperCase())) ||
-          repairCodes[0] ||
-          'ДР';
+          const matchedCode =
+            repairCodes.find((c) => c.toUpperCase() === repVal) ||
+            codesByLenDesc.find((c) => repVal.startsWith(c.toUpperCase())) ||
+            repairCodes[0] ||
+            'ДР';
 
-        if (!counts[matchedCode]) {
-          counts[matchedCode] = { w_ktt: 0, w_own: 0, d_ktt: 0, d_own: 0 };
-        }
-
-        // Б) Определение парка (КТТ или Собственники)
-        const parkBadge =
-          tr.querySelector('.badge, .park-badge, span')?.textContent?.trim() || '';
-        const custInputEl = tr.querySelector(
-          '.row-cust, input[list="cust-list"], input'
-        ) as HTMLInputElement | null;
-        const custInput = custInputEl?.value || cells[2]?.textContent || '';
-        const isKtt =
-          parkBadge.includes('КТТ') ||
-          custInput.toUpperCase().includes('КТТ') ||
-          custInput.toUpperCase().includes('КАЗТЕМИРТРАНС') ||
-          (typeof isKTT === 'function' && isKTT(custInput));
-
-        // В) Определение раздела / статуса дислокации
-        const secSelect = tr.querySelector(
-          '.row-section, select[name="section"]'
-        ) as HTMLSelectElement | null;
-        const secText = (
-          secSelect
-            ? secSelect.value +
-              ' ' +
-              (secSelect.options[secSelect.selectedIndex]?.text || '')
-            : cells[1]?.textContent || ''
-        ).toUpperCase();
-
-        // 1. Если вагон «На подходе» / «Направленные к станции» -> Правая половина матрицы
-        if (
-          secText.includes('EN_ROUTE') ||
-          secText.includes('ПОДХОД') ||
-          secText.includes('НАПРАВЛ')
-        ) {
-          directedTotal++;
-          if (isKtt) counts[matchedCode].d_ktt++;
-          else counts[matchedCode].d_own++;
-        }
-        // 2. Если вагон «Выпуск» (отремонтирован за смену) -> Не стоит в ожидании, считаем в выпуск
-        else if (
-          secText.includes('RELEASE') ||
-          secText.includes('ВЫПУСК') ||
-          secText.includes('СДАНО')
-        ) {
-          releaseTotal++;
-        }
-        // 3. ВСЕ ВАГОНЫ НА СТАНЦИИ (включая НЕОКОНЧЕННЫЙ РЕМОНТ, ПОДЪЁМКУ, В ОЖИДАНИИ, НА СТАНЦИИ)
-        // ОБЯЗАТЕЛЬНО идут в левую колонку: «Вагоны в ожидании ремонта на станции»!
-        else {
-          waitingTotal++;
-          if (
-            secText.includes('НЕОКОНЧ') ||
-            secText.includes('ПОДЪЕМ') ||
-            secText.includes('ПОДЪЁМ') ||
-            secText.includes('БРАК')
-          ) {
-            unfinishedTotal++;
+          if (!counts[matchedCode]) {
+            counts[matchedCode] = { w_ktt: 0, w_own: 0, d_ktt: 0, d_own: 0, r_ktt: 0, r_own: 0 };
           }
-          if (isKtt) counts[matchedCode].w_ktt++;
-          else counts[matchedCode].w_own++;
-        }
-      });
+
+          // Б) Определение парка (КТТ или Собственники)
+          const parkBadge =
+            tr.querySelector('.badge, .park-badge, span')?.textContent?.trim() || '';
+          const custInputEl = tr.querySelector(
+            '.row-cust, input[list="cust-list"], input'
+          ) as HTMLInputElement | null;
+          const custInput = custInputEl?.value || cells[2]?.textContent || '';
+          const isKtt =
+            parkBadge.includes('КТТ') ||
+            custInput.toUpperCase().includes('КТТ') ||
+            custInput.toUpperCase().includes('КАЗТЕМИРТРАНС') ||
+            (typeof isKTT === 'function' && isKTT(custInput));
+
+          // В) Определение раздела / статуса дислокации
+          const secSelect = tr.querySelector(
+            '.row-section, select[name="section"]'
+          ) as HTMLSelectElement | null;
+          const secText = (
+            secSelect
+              ? secSelect.value +
+                ' ' +
+                (secSelect.options[secSelect.selectedIndex]?.text || '')
+              : cells[1]?.textContent || ''
+          ).toUpperCase();
+
+          // 1. Если вагон «На подходе» / «Направленные к станции» -> Вторая группа матрицы (Подход)
+          if (
+            secText.includes('EN_ROUTE') ||
+            secText.includes('ПОДХОД') ||
+            secText.includes('НАПРАВЛ')
+          ) {
+            directedTotal++;
+            if (isKtt) counts[matchedCode].d_ktt++;
+            else counts[matchedCode].d_own++;
+          }
+          // 2. Если вагон «Выпуск» (отремонтирован за смену / период) -> Третья группа матрицы (Выпуск)
+          else if (
+            secText === 'RELEASE' ||
+            secText === 'RELEASED' ||
+            secText.includes('RELEASE') ||
+            secText.includes('ВЫПУСК') ||
+            secText.includes('СДАНО')
+          ) {
+            releaseTotal++;
+            if (isKtt) counts[matchedCode].r_ktt++;
+            else counts[matchedCode].r_own++;
+          }
+          // 3. ВСЕ ВАГОНЫ НА СТАНЦИИ (включая НЕОКОНЧЕННЫЙ РЕМОНТ, ПОДЪЁМКУ, В ОЖИДАНИИ, НА СТАНЦИИ)
+          // ОБЯЗАТЕЛЬНО идут в первую группу: «Вагоны в ожидании ремонта на станции»!
+          else {
+            waitingTotal++;
+            if (
+              secText.includes('НЕОКОНЧ') ||
+              secText.includes('ПОДЪЕМ') ||
+              secText.includes('ПОДЪЁМ') ||
+              secText.includes('БРАК')
+            ) {
+              unfinishedTotal++;
+            }
+            if (isKtt) counts[matchedCode].w_ktt++;
+            else counts[matchedCode].w_own++;
+          }
+        });
+      } else {
+        // Fallback на React-пул visibleWagons, если DOM-строки ещё не отрисованы
+        visibleWagonsRef.current.forEach((w) => {
+          totalWagons++;
+          const repVal = (w.repair_type || 'ДР').toUpperCase().trim();
+          const matchedCode =
+            repairCodes.find((c) => c.toUpperCase() === repVal) ||
+            codesByLenDesc.find((c) => repVal.startsWith(c.toUpperCase())) ||
+            repairCodes[0] ||
+            'ДР';
+          if (!counts[matchedCode]) {
+            counts[matchedCode] = { w_ktt: 0, w_own: 0, d_ktt: 0, d_own: 0, r_ktt: 0, r_own: 0 };
+          }
+          const isKtt = isKTT(w.customer);
+          const secText = (w.section || '').toUpperCase();
+          const grp = getSectionGroup(w.section);
+
+          if (
+            secText.includes('EN_ROUTE') ||
+            secText.includes('ПОДХОД') ||
+            secText.includes('НАПРАВЛ') ||
+            grp === 'directed'
+          ) {
+            directedTotal++;
+            if (isKtt) counts[matchedCode].d_ktt++;
+            else counts[matchedCode].d_own++;
+          } else if (
+            secText === 'RELEASE' ||
+            secText === 'RELEASED' ||
+            secText.includes('RELEASE') ||
+            secText.includes('ВЫПУСК') ||
+            secText.includes('СДАНО') ||
+            grp === 'release'
+          ) {
+            releaseTotal++;
+            if (isKtt) counts[matchedCode].r_ktt++;
+            else counts[matchedCode].r_own++;
+          } else {
+            waitingTotal++;
+            if (
+              secText.includes('НЕОКОНЧ') ||
+              secText.includes('ПОДЪЕМ') ||
+              secText.includes('ПОДЪЁМ') ||
+              secText.includes('БРАК') ||
+              grp === 'other'
+            ) {
+              unfinishedTotal++;
+            }
+            if (isKtt) counts[matchedCode].w_ktt++;
+            else counts[matchedCode].w_own++;
+          }
+        });
+      }
 
       // Г) Запись цифр в строки таблицы Матрицы (#branchMatrixBody)
       const matrixRows = document.querySelectorAll(
@@ -779,14 +908,18 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
           const c = counts[code];
           const wSub = c.w_ktt + c.w_own;
           const dSub = c.d_ktt + c.d_own;
-          const grand = wSub + dSub;
+          const rSub = c.r_ktt + c.r_own;
+          const grand = wSub + dSub + rSub;
           if (rowTr.children[1]) rowTr.children[1].textContent = String(c.w_ktt);
           if (rowTr.children[2]) rowTr.children[2].textContent = String(c.w_own);
           if (rowTr.children[3]) rowTr.children[3].textContent = String(wSub);
           if (rowTr.children[4]) rowTr.children[4].textContent = String(c.d_ktt);
           if (rowTr.children[5]) rowTr.children[5].textContent = String(c.d_own);
           if (rowTr.children[6]) rowTr.children[6].textContent = String(dSub);
-          if (rowTr.children[7]) rowTr.children[7].textContent = String(grand);
+          if (rowTr.children[7]) rowTr.children[7].textContent = String(c.r_ktt);
+          if (rowTr.children[8]) rowTr.children[8].textContent = String(c.r_own);
+          if (rowTr.children[9]) rowTr.children[9].textContent = String(rSub);
+          if (rowTr.children[10]) rowTr.children[10].textContent = String(grand);
         }
       });
 
@@ -797,6 +930,9 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       let tot_d_ktt = 0;
       let tot_d_own = 0;
       let tot_d_sub = 0;
+      let tot_r_ktt = 0;
+      let tot_r_own = 0;
+      let tot_r_sub = 0;
       let tot_grand = 0;
 
       repairCodes.forEach((code) => {
@@ -808,7 +944,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         tot_d_ktt += c.d_ktt;
         tot_d_own += c.d_own;
         tot_d_sub += c.d_ktt + c.d_own;
-        tot_grand += c.w_ktt + c.w_own + c.d_ktt + c.d_own;
+        tot_r_ktt += c.r_ktt;
+        tot_r_own += c.r_own;
+        tot_r_sub += c.r_ktt + c.r_own;
+        tot_grand += c.w_ktt + c.w_own + c.d_ktt + c.d_own + c.r_ktt + c.r_own;
       });
 
       const tfootTr = document.querySelector(
@@ -821,7 +960,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         if (tfootTr.children[4]) tfootTr.children[4].textContent = String(tot_d_ktt);
         if (tfootTr.children[5]) tfootTr.children[5].textContent = String(tot_d_own);
         if (tfootTr.children[6]) tfootTr.children[6].textContent = String(tot_d_sub);
-        if (tfootTr.children[7]) tfootTr.children[7].textContent = String(tot_grand);
+        if (tfootTr.children[7]) tfootTr.children[7].textContent = String(tot_r_ktt);
+        if (tfootTr.children[8]) tfootTr.children[8].textContent = String(tot_r_own);
+        if (tfootTr.children[9]) tfootTr.children[9].textContent = String(tot_r_sub);
+        if (tfootTr.children[10]) tfootTr.children[10].textContent = String(tot_grand);
       }
 
       // Е) Обновление бейджей счётчиков в интерфейсе
@@ -829,7 +971,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         '[data-tab="tab-wagons"], #tabBtn-wagons, button[onclick*="tab-wagons"]'
       );
       if (tabWagonsBtn) {
-        tabWagonsBtn.innerHTML = `🚂 2. Пономерная ситуация и дислокация (${totalWagons})`;
+        tabWagonsBtn.innerHTML = `Пономерная ситуация и дислокация (${totalWagons})`;
       }
       const summaryBadge =
         document.getElementById('wagonSummaryBadge') ||
@@ -843,19 +985,17 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         '.matrix-footer-note, .matrix-bottom-bar, #matrixFooterNotice'
       );
       if (noteEl) {
-        noteEl.innerHTML = `Всего в пономерном списке смены: <strong>${totalWagons} ваг.</strong> · В матрице ожидания и подхода: <strong>${
-          waitingTotal + directedTotal
-        } ваг.</strong> · Выпуск из ремонта за смену: <strong>${releaseTotal} ваг.</strong> · Неоконченный ремонт / Подъемка: <strong>${unfinishedTotal} ваг.</strong>`;
+        noteEl.innerHTML = `Всего в пономерном списке: <strong>${totalWagons} ваг.</strong> · В ожидании на станции: <strong>${waitingTotal} ваг.</strong> · На подходе: <strong>${directedTotal} ваг.</strong> · Выпуск (сдано): <strong>${releaseTotal} ваг.</strong> · Неоконченный ремонт / Подъемка: <strong>${unfinishedTotal} ваг.</strong> · ИТОГО баланс: <strong>${waitingTotal + directedTotal + releaseTotal} ваг.</strong>`;
       }
 
       if (notify) {
         triggerGreenSyncPulse();
         showToast(
-          `🔄 Матрица обновлена: учтено вагонов на станции — ${waitingTotal}, на подходе — ${directedTotal}.`
+          `🔄 Матрица обновлена: на станции — ${waitingTotal}, на подходе — ${directedTotal}, выпуск — ${releaseTotal}.`
         );
       }
     },
-    [activeRepairTypes, isKTT, triggerGreenSyncPulse, showToast]
+    [activeRepairTypes, isKTT, getSectionGroup, triggerGreenSyncPulse, showToast]
   );
 
   // 4. Динамическая перерисовка строк сводной матрицы под актуальный список ремонтов
@@ -1125,14 +1265,28 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       return shiftWagons;
     }
 
-    // В режиме периода объединяем оперативные вагоны смены и исторические вагоны из базы дислокации/выпуска за интервал [dateFrom, dateTo]
+    // В режиме периода:
+    // 1. Фиксируем остаток вагонов на путях на дату окончания периода (dateTo):
+    //    93 вагона в ожидании на станции + 20 вагонов на подходе к станции
+    const snapshotDate = dateTo || '2026-10-13';
+    const trackWagonsSource =
+      shiftWagons.some((w) => w.section === 'AT_STATION')
+        ? shiftWagons.filter((w) => w.section === 'AT_STATION' || w.section === 'EN_ROUTE')
+        : buildOctober2026WagonsForDate(snapshotDate).filter(
+            (w) => w.section === 'AT_STATION' || w.section === 'EN_ROUTE'
+          );
+
+    const snapshotWagons: ShiftWagonRow[] = trackWagonsSource.map((w) => ({
+      ...w,
+      submission_date: snapshotDate,
+    }));
+
     const inRange = (dtStr: string) => {
       if (!dtStr) return true;
       return dtStr >= dateFrom && dtStr <= dateTo;
     };
 
-    const baseShift = shiftWagons.filter((w) => inRange(w.submission_date));
-    const seenNums = new Set(baseShift.map((w) => w.wagon_number).filter(Boolean));
+    const seenNums = new Set(snapshotWagons.map((w) => w.wagon_number).filter(Boolean));
     const extraPeriodWagons: ShiftWagonRow[] = [];
 
     // Добавляем вагоны из базы дислокации и простоев, попадающие в диапазон дат
@@ -1153,7 +1307,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       } else if (stLower.includes('подход') || stLower.includes('пути')) {
         secLabel = 'На подходе к станции';
       } else if (stLower.includes('выпуск')) {
-        secLabel = 'Выпуск';
+        secLabel = 'RELEASE';
       }
 
       extraPeriodWagons.push({
@@ -1181,7 +1335,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         extraPeriodWagons.push({
           id: `period-rel-${rec.report_date}-${idx}-${k}`,
           depot_code: rec.depot_code,
-          section: 'Выпуск',
+          section: 'RELEASE',
           customer: rec.customer_name,
           wagon_number: synthNum,
           wagon_type: rec.wagon_type || 'Полувагон',
@@ -1193,7 +1347,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       }
     });
 
-    return [...baseShift, ...extraPeriodWagons];
+    return [...snapshotWagons, ...extraPeriodWagons];
   }, [dateMode, shiftWagons, dateFrom, dateTo, data.wagon_dislocations_and_stalls, data.daily_output_october]);
 
   // Фильтрация по выбранному филиалу
@@ -1233,6 +1387,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       // Выпущены
       return (
         secUpper === 'RELEASE' ||
+        secUpper === 'RELEASED' ||
         secUpper.includes('ВЫПУСК') ||
         secUpper.includes('RELEASE') ||
         secUpper.includes('СДАНО')
@@ -1256,7 +1411,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
   // Итоговый список вагонов с применением всех срезов: Филиал + Вид ремонта + Статус вагона + Текстовый поиск
   const visibleWagons = useMemo(() => {
     const q = wagonSearch.trim().toLowerCase();
-    return depotScopedWagons.filter((w) => {
+    const res = depotScopedWagons.filter((w) => {
       const matchRepair =
         filterRepair === 'ALL'
           ? true
@@ -1271,6 +1426,8 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         w.wagon_type.toLowerCase().includes(q);
       return matchRepair && matchStatus && matchQuery;
     });
+    visibleWagonsRef.current = res;
+    return res;
   }, [depotScopedWagons, filterRepair, wagonFilterStatus, wagonSearch, matchesWagonStatusFilter]);
 
   // Строгий расчёт Таблицы 1 (Матрица) из отфильтрованного пула вагонов (visibleWagons)
@@ -1286,9 +1443,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         dirKtt: number;
         dirOwn: number;
         dirTotal: number;
-        grandTotal: number;
         releaseKtt: number;
         releaseOwn: number;
+        releaseTotal: number;
+        grandTotal: number;
         otherKtt: number;
         otherOwn: number;
       }
@@ -1309,9 +1467,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         dirKtt: 0,
         dirOwn: 0,
         dirTotal: 0,
-        grandTotal: 0,
         releaseKtt: 0,
         releaseOwn: 0,
+        releaseTotal: 0,
+        grandTotal: 0,
         otherKtt: 0,
         otherOwn: 0,
       };
@@ -1321,6 +1480,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       const repVal = (w.repair_type || 'ДР').toUpperCase().trim();
       const matchedCode =
         repairCodes.find((c) => c.toUpperCase() === repVal) ||
+        repairCodes.find((c) => repVal.startsWith(c.toUpperCase())) ||
         repairCodes[0] ||
         'ДР';
 
@@ -1334,9 +1494,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
           dirKtt: 0,
           dirOwn: 0,
           dirTotal: 0,
-          grandTotal: 0,
           releaseKtt: 0,
           releaseOwn: 0,
+          releaseTotal: 0,
+          grandTotal: 0,
           otherKtt: 0,
           otherOwn: 0,
         };
@@ -1347,7 +1508,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       const combinedSec = (w.section || '').toUpperCase();
       const group = getSectionGroup(w.section);
 
-      // 1. На подходе / Направленные к станции -> правая часть матрицы
+      // 1. На подходе / Направленные к станции -> правая часть (Подход)
       if (
         combinedSec.includes('EN_ROUTE') ||
         combinedSec.includes('ПОДХОД') ||
@@ -1359,8 +1520,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         target.dirTotal += 1;
         target.grandTotal += 1;
       }
-      // 2. Выпуск (сдано за смену) -> завершённые (не в остатке на путях)
+      // 2. Выпуск (сдано за смену / период) -> колонка «Выпуск вагонов за период (сдано)»
       else if (
+        combinedSec === 'RELEASE' ||
+        combinedSec === 'RELEASED' ||
         combinedSec.includes('RELEASE') ||
         combinedSec.includes('ВЫПУСК') ||
         combinedSec.includes('СДАНО') ||
@@ -1368,9 +1531,11 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       ) {
         if (kttFlag) target.releaseKtt += 1;
         else target.releaseOwn += 1;
+        target.releaseTotal += 1;
+        target.grandTotal += 1;
       }
       // 3. ВСЕ ВАГОНЫ НА СТАНЦИИ (включая НЕОКОНЧЕННЫЙ РЕМОНТ, ПОДЪЁМКУ, В ОЖИДАНИИ, НА СТАНЦИИ)
-      // ОБЯЗАТЕЛЬНО идут в левую колонку: «Вагоны в ожидании ремонта на станции»!
+      // ОБЯЗАТЕЛЬНО идут в колонку: «Вагоны в ожидании на станции»!
       else {
         if (kttFlag) target.waitKtt += 1;
         else target.waitOwn += 1;
@@ -1399,8 +1564,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         acc.dirKtt += r.dirKtt;
         acc.dirOwn += r.dirOwn;
         acc.dirTotal += r.dirTotal;
+        acc.releaseKtt += r.releaseKtt;
+        acc.releaseOwn += r.releaseOwn;
+        acc.releaseTotal += r.releaseTotal;
         acc.grandTotal += r.grandTotal;
-        acc.releaseTotal += r.releaseKtt + r.releaseOwn;
         acc.otherTotal += r.otherKtt + r.otherOwn;
         return acc;
       },
@@ -1411,8 +1578,10 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         dirKtt: 0,
         dirOwn: 0,
         dirTotal: 0,
-        grandTotal: 0,
+        releaseKtt: 0,
+        releaseOwn: 0,
         releaseTotal: 0,
+        grandTotal: 0,
         otherTotal: 0,
       }
     );
@@ -1760,6 +1929,9 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       d_ktt: string;
       d_own: string;
       d_sub: string;
+      r_ktt: string;
+      r_own: string;
+      r_sub: string;
       grand: string;
     }> = [];
     const matrixTrs = document.querySelectorAll(
@@ -1767,7 +1939,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
     );
     matrixTrs.forEach((tr) => {
       const cells = tr.querySelectorAll('td');
-      if (cells.length >= 8) {
+      if (cells.length >= 11) {
         matrixRows.push({
           rep: cells[0]?.textContent?.trim() || '',
           w_ktt: cells[1]?.textContent?.trim() || '0',
@@ -1776,6 +1948,23 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
           d_ktt: cells[4]?.textContent?.trim() || '0',
           d_own: cells[5]?.textContent?.trim() || '0',
           d_sub: cells[6]?.textContent?.trim() || '0',
+          r_ktt: cells[7]?.textContent?.trim() || '0',
+          r_own: cells[8]?.textContent?.trim() || '0',
+          r_sub: cells[9]?.textContent?.trim() || '0',
+          grand: cells[10]?.textContent?.trim() || '0',
+        });
+      } else if (cells.length >= 8) {
+        matrixRows.push({
+          rep: cells[0]?.textContent?.trim() || '',
+          w_ktt: cells[1]?.textContent?.trim() || '0',
+          w_own: cells[2]?.textContent?.trim() || '0',
+          w_sub: cells[3]?.textContent?.trim() || '0',
+          d_ktt: cells[4]?.textContent?.trim() || '0',
+          d_own: cells[5]?.textContent?.trim() || '0',
+          d_sub: cells[6]?.textContent?.trim() || '0',
+          r_ktt: '0',
+          r_own: '0',
+          r_sub: '0',
           grand: cells[7]?.textContent?.trim() || '0',
         });
       }
@@ -1791,11 +1980,14 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
       d_ktt: '0',
       d_own: '0',
       d_sub: '0',
+      r_ktt: '0',
+      r_own: '0',
+      r_sub: '0',
       grand: '0',
     };
     if (tfootTr) {
       const fCells = tfootTr.querySelectorAll('td');
-      if (fCells.length >= 8) {
+      if (fCells.length >= 11) {
         totals = {
           w_ktt: fCells[1]?.textContent?.trim() || '0',
           w_own: fCells[2]?.textContent?.trim() || '0',
@@ -1803,6 +1995,22 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
           d_ktt: fCells[4]?.textContent?.trim() || '0',
           d_own: fCells[5]?.textContent?.trim() || '0',
           d_sub: fCells[6]?.textContent?.trim() || '0',
+          r_ktt: fCells[7]?.textContent?.trim() || '0',
+          r_own: fCells[8]?.textContent?.trim() || '0',
+          r_sub: fCells[9]?.textContent?.trim() || '0',
+          grand: fCells[10]?.textContent?.trim() || '0',
+        };
+      } else if (fCells.length >= 8) {
+        totals = {
+          w_ktt: fCells[1]?.textContent?.trim() || '0',
+          w_own: fCells[2]?.textContent?.trim() || '0',
+          w_sub: fCells[3]?.textContent?.trim() || '0',
+          d_ktt: fCells[4]?.textContent?.trim() || '0',
+          d_own: fCells[5]?.textContent?.trim() || '0',
+          d_sub: fCells[6]?.textContent?.trim() || '0',
+          r_ktt: '0',
+          r_own: '0',
+          r_sub: '0',
           grand: fCells[7]?.textContent?.trim() || '0',
         };
       }
@@ -2085,16 +2293,19 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
   <Worksheet ss:Name="${escapeXml(sheet1Name)}">
     <Table ss:DefaultRowHeight="20">
       <Column ss:Width="160"/>
-      <Column ss:Width="70"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="70"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
+      <Column ss:Width="60"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="60"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="60"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="90"/>
       <Column ss:Width="120"/>
 
       <Row ss:Height="26">
-        <Cell ss:MergeAcross="7" ss:StyleID="HeaderTitle">
+        <Cell ss:MergeAcross="10" ss:StyleID="HeaderTitle">
           <Data ss:Type="String">ТОО "Astana Railway Services" | Справка по вагонам ${escapeXml(reportDateLabel)} (${escapeXml(depotName)})</Data>
         </Cell>
       </Row>
@@ -2102,8 +2313,9 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
 
       <Row ss:Height="24">
         <Cell ss:MergeDown="1" ss:StyleID="ThDark"><Data ss:Type="String">Вид ремонта</Data></Cell>
-        <Cell ss:MergeAcross="2" ss:StyleID="ThDark"><Data ss:Type="String">Вагоны в ожидании ремонта на станции</Data></Cell>
-        <Cell ss:MergeAcross="2" ss:StyleID="ThDark"><Data ss:Type="String">Вагоны, направленные к станции в ремонт</Data></Cell>
+        <Cell ss:MergeAcross="2" ss:StyleID="ThDark"><Data ss:Type="String">Вагоны в ожидании на станции</Data></Cell>
+        <Cell ss:MergeAcross="2" ss:StyleID="ThDark"><Data ss:Type="String">Направленные в ремонт (подход)</Data></Cell>
+        <Cell ss:MergeAcross="2" ss:StyleID="ThDark"><Data ss:Type="String">Выпуск вагонов (сдано)</Data></Cell>
         <Cell ss:MergeDown="1" ss:StyleID="ThGrandTotal"><Data ss:Type="String">ВСЕГО</Data></Cell>
       </Row>
       <Row ss:Height="20">
@@ -2113,6 +2325,9 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         <Cell ss:StyleID="ThSub"><Data ss:Type="String">КТТ</Data></Cell>
         <Cell ss:StyleID="ThSub"><Data ss:Type="String">Собственники</Data></Cell>
         <Cell ss:StyleID="ThSub"><Data ss:Type="String">Итого направл.</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">КТТ</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Собственники</Data></Cell>
+        <Cell ss:StyleID="ThSub"><Data ss:Type="String">Итого выпуск</Data></Cell>
       </Row>`;
 
       matrixRows.forEach((r) => {
@@ -2125,19 +2340,25 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${parseInt(r.d_ktt, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${parseInt(r.d_own, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(r.d_sub, 10) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${parseInt(r.r_ktt, 10) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCell"><Data ss:Type="Number">${parseInt(r.r_own, 10) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(r.r_sub, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="TableCellGrandTotal"><Data ss:Type="Number">${parseInt(r.grand, 10) || 0}</Data></Cell>
       </Row>`;
       });
 
       xml += `
       <Row ss:Height="24">
-        <Cell ss:StyleID="FooterTotalLeft"><Data ss:Type="String">ВСЕГО</Data></Cell>
+        <Cell ss:StyleID="FooterTotalLeft"><Data ss:Type="String">ВСЕГО (Ожидание + Подход + Выпуск)</Data></Cell>
         <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.w_ktt, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.w_own, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="FooterHighlight"><Data ss:Type="Number">${parseInt(totals.w_sub, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.d_ktt, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.d_own, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="FooterHighlight"><Data ss:Type="Number">${parseInt(totals.d_sub, 10) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.r_ktt, 10) || 0}</Data></Cell>
+        <Cell ss:StyleID="TableCellTotal"><Data ss:Type="Number">${parseInt(totals.r_own, 10) || 0}</Data></Cell>
+        <Cell ss:StyleID="FooterHighlight"><Data ss:Type="Number">${parseInt(totals.r_sub, 10) || 0}</Data></Cell>
         <Cell ss:StyleID="FooterGrandTotal"><Data ss:Type="Number">${parseInt(totals.grand, 10) || 0}</Data></Cell>
       </Row>
     </Table>
@@ -2476,282 +2697,391 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
   // ========================================================
   // КОНТРОЛЛЕР КОМПОНЕНТА ВЫБОРА ДАТЫ, МЕСЯЦА И ГОДА С КАЛЕНДАРЁМ
   // ========================================================
-  const calViewStateRef = useRef<{
-    selectedDate: Date;
-    viewYear: number;
-    viewMonth: number;
-    isOpen: boolean;
-  }>({
-    selectedDate: new Date(2026, 9, 21),
-    viewYear: 2026,
-    viewMonth: 9,
-    isOpen: false,
-  });
+  const formatIsoToDot = useCallback((isoStr: string) => {
+    const parts = isoStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}.${parts[1]}.${parts[0]}`;
+    }
+    return isoStr;
+  }, []);
 
-  const onDateChange = useCallback(
-    (val: string) => {
-      if (!val) return;
-      setReportDateValue(val);
-      loadCurrentBranchReport(selectedDepot, val);
-      if (typeof window.logSystemAction === 'function') {
-        window.logSystemAction('Выбор даты отчёта', `Установлена дата оперативной смены: ${val}`);
-      }
-    },
-    [loadCurrentBranchReport, selectedDepot]
-  );
-
-  const updateDatePickerDisplay = useCallback(() => {
-    const d = calViewStateRef.current.selectedDate;
+  const formattedDateMeta = useMemo(() => {
+    const parts = selectedDate.split('-').map(Number);
+    const d =
+      parts.length === 3 && !parts.some(Number.isNaN)
+        ? new Date(parts[0], parts[1] - 1, parts[2])
+        : new Date();
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
-    const isoDate = `${yyyy}-${mm}-${dd}`;
-
-    const hiddenInput = document.getElementById('inputDate') as HTMLInputElement | null;
-    if (hiddenInput) {
-      hiddenInput.value = isoDate;
-    }
-
-    const displayEl = document.getElementById('dateDisplayFormatted');
-    if (displayEl) {
-      displayEl.textContent = `${dd}.${mm}.${yyyy}`;
-    }
-
     const daysShort = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
-    const dowEl = document.getElementById('dateDisplayDayOfWeek') as HTMLElement | null;
-    if (dowEl) {
-      const dayIdx = d.getDay();
-      dowEl.textContent = daysShort[dayIdx];
-      if (dayIdx === 0 || dayIdx === 6) {
-        dowEl.style.background = '#FEE2E2';
-        dowEl.style.color = '#DC2626';
-      } else {
-        dowEl.style.background = '#E2E8F0';
-        dowEl.style.color = '#475569';
-      }
+    const dayIdx = d.getDay();
+    const isWeekend = dayIdx === 0 || dayIdx === 6;
+    return {
+      iso: `${yyyy}-${mm}-${dd}`,
+      formatted: `${dd}.${mm}.${yyyy}`,
+      dow: daysShort[dayIdx],
+      isWeekend,
+      dateObj: d,
+    };
+  }, [selectedDate]);
+
+  const formattedPeriodDisplay = useMemo(() => {
+    return `${formatIsoToDot(dateFrom)} — ${formatIsoToDot(dateTo)}`;
+  }, [dateFrom, dateTo, formatIsoToDot]);
+
+  const calYearsList = useMemo(() => {
+    const baseYear = new Date().getFullYear();
+    const list: number[] = [];
+    for (let y = baseYear - 3; y <= baseYear + 2; y++) {
+      list.push(y);
     }
-
-    onDateChange(isoDate);
-  }, [onDateChange]);
-
-  const closeCalendarPopover = useCallback(() => {
-    const popover = document.getElementById('arsCalendarPopover');
-    const trigger = document.getElementById('arsDateTrigger');
-    if (popover) popover.style.display = 'none';
-    if (trigger) trigger.classList.remove('active');
-    calViewStateRef.current.isOpen = false;
+    return list;
   }, []);
 
-  const renderCalendarGrid = useCallback(() => {
-    const grid = document.getElementById('calDaysGrid');
-    const monthSelect = document.getElementById('calMonthSelect') as HTMLSelectElement | null;
-    const yearSelect = document.getElementById('calYearSelect') as HTMLSelectElement | null;
-    if (!grid) return;
-
-    const { viewMonth, viewYear, selectedDate } = calViewStateRef.current;
-
-    if (monthSelect) monthSelect.value = String(viewMonth);
-    if (yearSelect) yearSelect.value = String(viewYear);
-
-    grid.innerHTML = '';
-
-    const firstDayOfMonth = new Date(viewYear, viewMonth, 1);
-    const lastDayOfMonth = new Date(viewYear, viewMonth + 1, 0);
+  const calendarCells = useMemo(() => {
+    const firstDayOfMonth = new Date(calViewYear, calViewMonth, 1);
+    const lastDayOfMonth = new Date(calViewYear, calViewMonth + 1, 0);
 
     let startDayOfWeek = firstDayOfMonth.getDay() - 1;
     if (startDayOfWeek < 0) startDayOfWeek = 6; // Воскресенье -> 6
 
     const daysInMonth = lastDayOfMonth.getDate();
-    const prevMonthLastDay = new Date(viewYear, viewMonth, 0).getDate();
+    const prevMonthLastDay = new Date(calViewYear, calViewMonth, 0).getDate();
 
-    const refToday = new Date(2026, 9, 21);
-    const isSameDay = (d1: Date, d2: Date) =>
-      d1.getFullYear() === d2.getFullYear() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getDate() === d2.getDate();
+    const todayIso = getTodayIsoDateString();
+    const toIso = (dt: Date) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(
+        dt.getDate()
+      ).padStart(2, '0')}`;
+
+    const cells: Array<{
+      key: string;
+      dayNum: number;
+      iso: string;
+      dateObj: Date;
+      isOtherMonth: boolean;
+      isWeekend: boolean;
+      isToday: boolean;
+      isSelected: boolean;
+      isInRange: boolean;
+    }> = [];
+
+    const pushCell = (dt: Date, isOtherMonth: boolean) => {
+      const iso = toIso(dt);
+      const dow = dt.getDay();
+      const isWeekend = dow === 0 || dow === 6;
+      const isToday = iso === todayIso;
+      const isSelected =
+        dateMode === 'daily'
+          ? iso === selectedDate
+          : iso === dateFrom || iso === dateTo;
+      const isInRange =
+        dateMode === 'period' && iso > dateFrom && iso < dateTo;
+
+      cells.push({
+        key: `${iso}-${isOtherMonth ? 'other' : 'cur'}`,
+        dayNum: dt.getDate(),
+        iso,
+        dateObj: dt,
+        isOtherMonth,
+        isWeekend,
+        isToday,
+        isSelected,
+        isInRange,
+      });
+    };
 
     // Предыдущий месяц (хвост)
     for (let i = startDayOfWeek - 1; i >= 0; i--) {
       const dayNum = prevMonthLastDay - i;
-      const cell = document.createElement('div');
-      cell.className = 'cal-day other-month';
-      cell.textContent = String(dayNum);
-      cell.onclick = (e) => {
-        e.stopPropagation();
-        calViewStateRef.current.selectedDate = new Date(viewYear, viewMonth - 1, dayNum);
-        calViewStateRef.current.viewYear = calViewStateRef.current.selectedDate.getFullYear();
-        calViewStateRef.current.viewMonth = calViewStateRef.current.selectedDate.getMonth();
-        updateDatePickerDisplay();
-        renderCalendarGrid();
-        closeCalendarPopover();
-      };
-      grid.appendChild(cell);
+      pushCell(new Date(calViewYear, calViewMonth - 1, dayNum), true);
     }
 
     // Текущий месяц
     for (let day = 1; day <= daysInMonth; day++) {
-      const cellDate = new Date(viewYear, viewMonth, day);
-      const cell = document.createElement('div');
-      cell.className = 'cal-day';
-      cell.textContent = String(day);
-
-      const dow = cellDate.getDay();
-      if (dow === 0 || dow === 6) cell.classList.add('weekend');
-      if (isSameDay(cellDate, refToday)) cell.classList.add('today');
-      if (isSameDay(cellDate, selectedDate)) cell.classList.add('selected');
-
-      cell.onclick = (e) => {
-        e.stopPropagation();
-        calViewStateRef.current.selectedDate = cellDate;
-        updateDatePickerDisplay();
-        renderCalendarGrid();
-        closeCalendarPopover();
-      };
-      grid.appendChild(cell);
+      pushCell(new Date(calViewYear, calViewMonth, day), false);
     }
 
-    // Следующий месяц (до 42 ячеек)
+    // Следующий месяц
     const totalCells = startDayOfWeek + daysInMonth;
     const nextDays = (7 - (totalCells % 7)) % 7;
     for (let nextD = 1; nextD <= nextDays; nextD++) {
-      const cell = document.createElement('div');
-      cell.className = 'cal-day other-month';
-      cell.textContent = String(nextD);
-      cell.onclick = (e) => {
-        e.stopPropagation();
-        calViewStateRef.current.selectedDate = new Date(viewYear, viewMonth + 1, nextD);
-        calViewStateRef.current.viewYear = calViewStateRef.current.selectedDate.getFullYear();
-        calViewStateRef.current.viewMonth = calViewStateRef.current.selectedDate.getMonth();
-        updateDatePickerDisplay();
-        renderCalendarGrid();
-        closeCalendarPopover();
-      };
-      grid.appendChild(cell);
+      pushCell(new Date(calViewYear, calViewMonth + 1, nextD), true);
     }
-  }, [closeCalendarPopover, updateDatePickerDisplay]);
 
-  const stepDateDay = useCallback(
-    (offsetDays: number) => {
-      const d = new Date(calViewStateRef.current.selectedDate);
-      d.setDate(d.getDate() + offsetDays);
-      calViewStateRef.current.selectedDate = d;
-      calViewStateRef.current.viewYear = d.getFullYear();
-      calViewStateRef.current.viewMonth = d.getMonth();
-      updateDatePickerDisplay();
-      renderCalendarGrid();
+    return cells;
+  }, [calViewYear, calViewMonth, dateMode, selectedDate, dateFrom, dateTo]);
+
+  const onDateChange = useCallback(
+    (val: string) => {
+      if (!val) return;
+      const parts = val.split('-').map(Number);
+      if (parts.length === 3 && !parts.some(Number.isNaN)) {
+        const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+        setCalViewYear(dt.getFullYear());
+        setCalViewMonth(dt.getMonth());
+      }
+      setSelectedDate(val);
+      loadCurrentBranchReport(selectedDepot, val);
+      if (typeof window.logSystemAction === 'function') {
+        window.logSystemAction('Выбор даты отчёта', `Установлена дата оперативной смены: ${val}`);
+      }
     },
-    [renderCalendarGrid, updateDatePickerDisplay]
+    [loadCurrentBranchReport, selectedDepot, setSelectedDate]
   );
 
-  const stepCalMonth = useCallback(
-    (offsetMonths: number) => {
-      const d = new Date(
-        calViewStateRef.current.viewYear,
-        calViewStateRef.current.viewMonth + offsetMonths,
-        1
-      );
-      calViewStateRef.current.viewYear = d.getFullYear();
-      calViewStateRef.current.viewMonth = d.getMonth();
-      renderCalendarGrid();
-    },
-    [renderCalendarGrid]
-  );
+  // Автоматическая перезагрузка данных и пересчёт матрицы при изменении selectedDate, dateMode, dateFrom, dateTo
+  useEffect(() => {
+    loadCurrentBranchReport(selectedDepot, selectedDate);
+  }, [selectedDate, dateMode, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onCalMonthYearChange = useCallback(() => {
-    const monthSelect = document.getElementById('calMonthSelect') as HTMLSelectElement | null;
-    const yearSelect = document.getElementById('calYearSelect') as HTMLSelectElement | null;
-    if (monthSelect) calViewStateRef.current.viewMonth = parseInt(monthSelect.value, 10);
-    if (yearSelect) calViewStateRef.current.viewYear = parseInt(yearSelect.value, 10);
-    renderCalendarGrid();
-  }, [renderCalendarGrid]);
-
-  const goToTodayDate = useCallback(() => {
-    const oct21 = new Date(2026, 9, 21);
-    calViewStateRef.current.selectedDate = oct21;
-    calViewStateRef.current.viewYear = oct21.getFullYear();
-    calViewStateRef.current.viewMonth = oct21.getMonth();
-    updateDatePickerDisplay();
-    renderCalendarGrid();
-    closeCalendarPopover();
-  }, [closeCalendarPopover, renderCalendarGrid, updateDatePickerDisplay]);
-
-  const setRelativeDateDay = useCallback(
-    (offsetDays: number) => {
-      const d = new Date(2026, 9, 21);
-      d.setDate(d.getDate() + offsetDays);
-      calViewStateRef.current.selectedDate = d;
-      calViewStateRef.current.viewYear = d.getFullYear();
-      calViewStateRef.current.viewMonth = d.getMonth();
-      updateDatePickerDisplay();
-      renderCalendarGrid();
-      closeCalendarPopover();
-    },
-    [closeCalendarPopover, renderCalendarGrid, updateDatePickerDisplay]
-  );
+  const closeCalendarPopover = useCallback(() => {
+    setIsCalendarOpen(false);
+  }, []);
 
   const toggleCalendarPopover = useCallback(
     (event?: MouseEvent | React.MouseEvent) => {
       if (event) event.stopPropagation();
-      const popover = document.getElementById('arsCalendarPopover');
-      const trigger = document.getElementById('arsDateTrigger');
-      if (!popover) return;
-
-      calViewStateRef.current.isOpen = !calViewStateRef.current.isOpen;
-      if (calViewStateRef.current.isOpen) {
-        calViewStateRef.current.viewYear = calViewStateRef.current.selectedDate.getFullYear();
-        calViewStateRef.current.viewMonth = calViewStateRef.current.selectedDate.getMonth();
-        renderCalendarGrid();
-        popover.style.display = 'block';
-        if (trigger) trigger.classList.add('active');
-      } else {
-        closeCalendarPopover();
-      }
+      setIsCalendarOpen((prev) => {
+        const next = !prev;
+        if (next) {
+          const refIso = dateMode === 'daily' ? selectedDate : dateTo;
+          const parts = refIso.split('-').map(Number);
+          if (parts.length === 3 && !parts.some(Number.isNaN)) {
+            setCalViewYear(parts[0]);
+            setCalViewMonth(parts[1] - 1);
+          }
+        }
+        return next;
+      });
     },
-    [closeCalendarPopover, renderCalendarGrid]
+    [dateMode, selectedDate, dateTo]
   );
 
-  const initDatePickerComponent = useCallback(() => {
-    const yearSelect = document.getElementById('calYearSelect') as HTMLSelectElement | null;
-    const baseYear = 2026;
-    if (yearSelect) {
-      yearSelect.innerHTML = '';
-      for (let y = baseYear - 3; y <= baseYear + 2; y++) {
-        const opt = document.createElement('option');
-        opt.value = String(y);
-        opt.textContent = `${y} г.`;
-        yearSelect.appendChild(opt);
+  const handleCalendarDayClick = useCallback(
+    (cellIso: string, cellDateObj: Date) => {
+      setCalViewYear(cellDateObj.getFullYear());
+      setCalViewMonth(cellDateObj.getMonth());
+
+      if (dateMode === 'daily') {
+        onDateChange(cellIso);
+        setIsCalendarOpen(false);
+      } else {
+        setActivePreset('custom');
+        if (periodPickStep === 'start') {
+          setDateFrom(cellIso);
+          setDateTo(cellIso);
+          setPeriodPickStep('end');
+        } else {
+          if (cellIso < dateFrom) {
+            setDateTo(dateFrom);
+            setDateFrom(cellIso);
+          } else {
+            setDateTo(cellIso);
+          }
+          setPeriodPickStep('start');
+        }
       }
-    }
+    },
+    [dateMode, onDateChange, periodPickStep, dateFrom]
+  );
 
-    // Устанавливаем дату по умолчанию в шапке на 21 октября 2026 года
-    const inputDateEl = document.getElementById('inputDate') as HTMLInputElement | null;
-    if (inputDateEl) {
-      inputDateEl.value = '2026-10-21';
-    }
+  // Пошаговое переключение даты стрелками [ ◀ ] и [ ▶ ] (шаг на 1 день)
+  const stepDate = useCallback(
+    (offset: number) => {
+      if (dateMode === 'period') {
+        const p1 = dateFrom.split('-').map(Number);
+        const p2 = dateTo.split('-').map(Number);
+        const d1 = p1.length === 3 ? new Date(p1[0], p1[1] - 1, p1[2]) : new Date(dateFrom);
+        const d2 = p2.length === 3 ? new Date(p2[0], p2[1] - 1, p2[2]) : new Date(dateTo);
+        if (!Number.isNaN(d1.getTime()) && !Number.isNaN(d2.getTime())) {
+          d1.setDate(d1.getDate() + offset);
+          d2.setDate(d2.getDate() + offset);
+          const fmt = (dt: Date) =>
+            `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(
+              dt.getDate()
+            ).padStart(2, '0')}`;
+          setDateFrom(fmt(d1));
+          setDateTo(fmt(d2));
+          setActivePreset('custom');
+          setCalViewYear(d2.getFullYear());
+          setCalViewMonth(d2.getMonth());
+        }
+        return;
+      }
 
-    const defaultOctDate = new Date(2026, 9, 21);
-    calViewStateRef.current.selectedDate = defaultOctDate;
-    calViewStateRef.current.viewYear = 2026;
-    calViewStateRef.current.viewMonth = 9;
+      const parts = selectedDate.split('-').map(Number);
+      const current =
+        parts.length === 3 && !parts.some(Number.isNaN)
+          ? new Date(parts[0], parts[1] - 1, parts[2])
+          : new Date(selectedDate);
+      current.setDate(current.getDate() + offset);
+      const y = current.getFullYear();
+      const m = String(current.getMonth() + 1).padStart(2, '0');
+      const d = String(current.getDate()).padStart(2, '0');
+      const newDateStr = `${y}-${m}-${d}`;
 
-    updateDatePickerDisplay();
-    renderCalendarGrid();
-  }, [renderCalendarGrid, updateDatePickerDisplay]);
+      setCalViewYear(current.getFullYear());
+      setCalViewMonth(current.getMonth());
+      setSelectedDate(newDateStr);
+    },
+    [dateMode, dateFrom, dateTo, selectedDate, setSelectedDate]
+  );
 
+  const stepDateDay = stepDate;
+
+  const stepCalMonth = useCallback(
+    (offsetMonths: number) => {
+      const d = new Date(calViewYear, calViewMonth + offsetMonths, 1);
+      setCalViewYear(d.getFullYear());
+      setCalViewMonth(d.getMonth());
+    },
+    [calViewYear, calViewMonth]
+  );
+
+  const onCalMonthYearChange = useCallback(
+    (nextMonth?: number, nextYear?: number) => {
+      if (typeof nextMonth === 'number' && !Number.isNaN(nextMonth)) {
+        setCalViewMonth(nextMonth);
+      }
+      if (typeof nextYear === 'number' && !Number.isNaN(nextYear)) {
+        setCalViewYear(nextYear);
+      }
+    },
+    []
+  );
+
+  const goToTodayDate = useCallback(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${y}-${m}-${d}`;
+
+    setCalViewYear(today.getFullYear());
+    setCalViewMonth(today.getMonth());
+    setSelectedDate(todayStr);
+    setIsCalendarOpen(false);
+  }, [setSelectedDate]);
+
+  const setRelativeDateDay = useCallback(
+    (offsetDays: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const targetStr = `${y}-${m}-${day}`;
+
+      setCalViewYear(d.getFullYear());
+      setCalViewMonth(d.getMonth());
+      setSelectedDate(targetStr);
+      setIsCalendarOpen(false);
+    },
+    [setSelectedDate]
+  );
+
+  const updateDatePickerDisplay = useCallback(() => {
+    onDateChange(selectedDate);
+  }, [onDateChange, selectedDate]);
+
+  const renderCalendarGrid = useCallback(() => {
+    // Сетка календаря рендерится декларативно через React (calendarCells)
+  }, []);
+
+  const initDatePickerComponent = useCallback(() => {
+    const now = new Date();
+    setCalViewYear(now.getFullYear());
+    setCalViewMonth(now.getMonth());
+    const todayStr = getTodayIsoDateString();
+    setSelectedDate(todayStr);
+  }, [setSelectedDate]);
+
+  // Синхронизация плашки даты в шапке Ситуационного центра ([📅 26 октября 2026 ▾])
   useEffect(() => {
-    initDatePickerComponent();
+    window.updateHeaderDateLabel?.(selectedDate);
+  }, [selectedDate]);
 
+  // Автономный встроенный Mock API Layer для работы всех фильтров и расчётов без бэкенда в превью AI Studio
+  useEffect(() => {
+    const mockApi = {
+      getDailyShiftSummary: (depot = selectedDepot, date = selectedDate) => ({
+        status: 'ok',
+        depot,
+        date,
+        totalWagons: visibleWagonsRef.current.length,
+        holdingTotals: {
+          waitingAndTrack: 128,
+          inRepair: 36,
+          released: 90,
+          plan: 380,
+          completionPct: 23.7,
+        },
+        branches: [
+          { code: 'KVRD', name: 'Кушмурунское ВРД (КВРД)', onTrack: 45, inRepair: 12, released: 28, plan: 110, pct: 25.5 },
+          { code: 'AVRD', name: 'Арысское ВРД (АВРД)', onTrack: 25, inRepair: 10, released: 32, plan: 120, pct: 26.7 },
+          { code: 'BVRD', name: 'Балхашское ВРД (БВРД)', onTrack: 24, inRepair: 6, released: 14, plan: 70, pct: 20.0 },
+          { code: 'UVRD', name: 'Уральское ВРД (УВРД)', onTrack: 34, inRepair: 8, released: 16, plan: 80, pct: 20.0 },
+        ],
+      }),
+      getWagons: (depot = selectedDepot, search = wagonSearch) => ({
+        status: 'ok',
+        depot,
+        search,
+        count: visibleWagonsRef.current.length,
+        items: visibleWagonsRef.current,
+      }),
+    };
+    (window as unknown as Record<string, unknown>).ArsMockApi = mockApi;
+
+    try {
+      const origFetch = window.fetch;
+      if (origFetch && !(origFetch as unknown as Record<string, boolean>).__arsMockInstalled) {
+        const patchedFetch: typeof window.fetch = async (input, init) => {
+          const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+          if (urlStr.includes('/api/shift') || urlStr.includes('/api/matrix') || urlStr.includes('/api/wagons')) {
+            return new Response(JSON.stringify(mockApi.getDailyShiftSummary()), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          return origFetch.call(window, input, init);
+        };
+        (patchedFetch as unknown as Record<string, boolean>).__arsMockInstalled = true;
+        window.fetch = patchedFetch;
+      }
+    } catch (_e) {
+      // В среде превью window.fetch доступен только для чтения (getter-only)
+    }
+  }, [selectedDepot, selectedDate, wagonSearch]);
+
+  // Закрытие календаря по клику вне его области и по клавише Escape
+  useEffect(() => {
     const handleDocClick = (e: MouseEvent) => {
-      const toolbar = document.getElementById('arsDateToolbar');
-      if (toolbar && !toolbar.contains(e.target as Node)) {
-        closeCalendarPopover();
+      const targetNode = e.target as Node;
+      const toolbarEl = calendarToolbarRef.current || document.getElementById('arsDateToolbar');
+      const headerDateBtn = document.getElementById('headerDateBadgeBtn');
+      if (
+        toolbarEl &&
+        !toolbarEl.contains(targetNode) &&
+        (!headerDateBtn || !headerDateBtn.contains(targetNode))
+      ) {
+        setIsCalendarOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsCalendarOpen(false);
       }
     };
     document.addEventListener('click', handleDocClick);
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('click', handleDocClick);
+      document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [initDatePickerComponent, closeCalendarPopover]);
+  }, []);
 
   useEffect(() => {
     window.initDatePickerComponent = initDatePickerComponent;
@@ -2759,7 +3089,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
     window.renderCalendarGrid = renderCalendarGrid;
     window.stepDateDay = stepDateDay;
     window.stepCalMonth = stepCalMonth;
-    window.onCalMonthYearChange = onCalMonthYearChange;
+    window.onCalMonthYearChange = () => onCalMonthYearChange();
     window.goToTodayDate = goToTodayDate;
     window.setRelativeDateDay = setRelativeDateDay;
     window.toggleCalendarPopover = toggleCalendarPopover;
@@ -2779,8 +3109,93 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
     onDateChange,
   ]);
 
+  // Данные сводной матрицы по филиалам с прогресс-барами и итогом (128 / 36 / 90 / 380 / 23,7%)
+  const holdingBranchSummaryRows = useMemo(() => {
+    const baseBranches = [
+      {
+        code: 'KVRD',
+        name: 'Кушмурунское ВРД',
+        short: 'КВРД',
+        stripeColor: '#2563EB',
+        defaultWaiting: 45,
+        inRepair: 12,
+        released: 28,
+        plan: 110,
+        pct: 25.5,
+      },
+      {
+        code: 'AVRD',
+        name: 'Арысское ВРД',
+        short: 'АВРД',
+        stripeColor: '#16A34A',
+        defaultWaiting: 25,
+        inRepair: 10,
+        released: 32,
+        plan: 120,
+        pct: 26.7,
+      },
+      {
+        code: 'BVRD',
+        name: 'Балхашское ВРД',
+        short: 'БВРД',
+        stripeColor: '#D97706',
+        defaultWaiting: 24,
+        inRepair: 6,
+        released: 14,
+        plan: 70,
+        pct: 20.0,
+      },
+      {
+        code: 'UVRD',
+        name: 'Уральское ВРД',
+        short: 'УВРД',
+        stripeColor: '#2563EB',
+        defaultWaiting: 34,
+        inRepair: 8,
+        released: 16,
+        plan: 80,
+        pct: 20.0,
+      },
+    ];
+
+    return baseBranches
+      .filter((b) => selectedDepot === 'ALL' || selectedDepot === b.code)
+      .map((b) => {
+        const dynamicCount = shiftWagons.filter((w) => w.depot_code === b.code).length;
+        const onSiteCount = dynamicCount > 0 ? dynamicCount : b.defaultWaiting;
+        return {
+          ...b,
+          onSiteCount,
+        };
+      });
+  }, [selectedDepot, shiftWagons]);
+
+  const holdingSummaryTotals = useMemo(() => {
+    if (selectedDepot === 'ALL' && shiftWagons.length === 128) {
+      return {
+        onSite: 128,
+        inRepair: 36,
+        released: 90,
+        plan: 380,
+        pct: 23.7,
+      };
+    }
+    const sum = holdingBranchSummaryRows.reduce(
+      (acc, r) => {
+        acc.onSite += r.onSiteCount;
+        acc.inRepair += r.inRepair;
+        acc.released += r.released;
+        acc.plan += r.plan;
+        return acc;
+      },
+      { onSite: 0, inRepair: 0, released: 0, plan: 0 }
+    );
+    const pct = sum.plan > 0 ? Number(((sum.released / sum.plan) * 100).toFixed(1)) : 0;
+    return { ...sum, pct };
+  }, [selectedDepot, shiftWagons.length, holdingBranchSummaryRows]);
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {toastMessage && (
         <div
           role="status"
@@ -2791,173 +3206,195 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
         </div>
       )}
 
-      {/* 1. Панель переключения филиалов и статуса */}
-      <div id="branchSwitcherBar" className="branch-bar">
-        <span
-          style={{
-            fontSize: '12px',
-            fontWeight: 700,
-            color: '#64748B',
-            textTransform: 'uppercase',
-            letterSpacing: '0.03em',
-          }}
-        >
-          {isBranchRole ? 'Изолированный контур депо:' : 'Аналитика холдинга:'}
-        </span>
+      {/* 4. ОДНОСТРОЧНАЯ ПАНЕЛЬ ФИЛЬТРОВ: [Все депо] [КВРД] [АВРД] [БВРД] [УВРД] | [26.10.2026] [Сегодня] | Поиск вагонов */}
+      <div className="ars-filter-panel" id="arsFilterPanel">
+        <div className="ars-single-filter-row">
+          {/* Слева: Кнопки филиалов */}
+          <div id="branchSwitcherBar" className="flex flex-wrap items-center gap-1.5">
+            <a
+              href="#all"
+              id="pill-ALL"
+              style={{ display: isBranchRole ? 'none' : 'inline-flex' }}
+              className={`branch-pill ${selectedDepot === 'ALL' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault();
+                selectDepot('ALL');
+              }}
+            >
+              Все депо
+            </a>
 
-        <a
-          href="#all"
-          id="pill-ALL"
-          style={{ display: isBranchRole ? 'none' : 'inline-flex' }}
-          className={`branch-pill ${selectedDepot === 'ALL' ? 'active' : ''}`}
-          onClick={(e) => {
-            e.preventDefault();
-            selectDepot('ALL');
-          }}
-        >
-          📊 Общая сводка холдинга
-        </a>
+            <a
+              href="#KVRD"
+              id="pill-KVRD"
+              style={{
+                display: !isBranchRole || lockedDepotCode === 'KVRD' ? 'inline-flex' : 'none',
+              }}
+              className={`branch-pill ${selectedDepot === 'KVRD' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault();
+                selectDepot('KVRD');
+              }}
+              title="Кушмурунское ВРД"
+            >
+              КВРД
+            </a>
 
-        <a
-          href="#KVRD"
-          id="pill-KVRD"
-          style={{
-            display: !isBranchRole || lockedDepotCode === 'KVRD' ? 'inline-flex' : 'none',
-          }}
-          className={`branch-pill ${selectedDepot === 'KVRD' ? 'active' : ''}`}
-          onClick={(e) => {
-            e.preventDefault();
-            selectDepot('KVRD');
-          }}
-        >
-          KVRD (Кушмурун)
-        </a>
+            <a
+              href="#AVRD"
+              id="pill-AVRD"
+              style={{
+                display: !isBranchRole || lockedDepotCode === 'AVRD' ? 'inline-flex' : 'none',
+              }}
+              className={`branch-pill ${selectedDepot === 'AVRD' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault();
+                selectDepot('AVRD');
+              }}
+              title="Арысское ВРД"
+            >
+              АВРД
+            </a>
 
-        <a
-          href="#AVRD"
-          id="pill-AVRD"
-          style={{
-            display: !isBranchRole || lockedDepotCode === 'AVRD' ? 'inline-flex' : 'none',
-          }}
-          className={`branch-pill ${selectedDepot === 'AVRD' ? 'active' : ''}`}
-          onClick={(e) => {
-            e.preventDefault();
-            selectDepot('AVRD');
-          }}
-        >
-          AVRD (Арыс)
-        </a>
+            <a
+              href="#BVRD"
+              id="pill-BVRD"
+              style={{
+                display: !isBranchRole || lockedDepotCode === 'BVRD' ? 'inline-flex' : 'none',
+              }}
+              className={`branch-pill ${selectedDepot === 'BVRD' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault();
+                selectDepot('BVRD');
+              }}
+              title="Балхашское ВРД"
+            >
+              БВРД
+            </a>
 
-        <a
-          href="#BVRD"
-          id="pill-BVRD"
-          style={{
-            display: !isBranchRole || lockedDepotCode === 'BVRD' ? 'inline-flex' : 'none',
-          }}
-          className={`branch-pill ${selectedDepot === 'BVRD' ? 'active' : ''}`}
-          onClick={(e) => {
-            e.preventDefault();
-            selectDepot('BVRD');
-          }}
-        >
-          BVRD (Балхаш)
-        </a>
+            <a
+              href="#UVRD"
+              id="pill-UVRD"
+              style={{
+                display: !isBranchRole || lockedDepotCode === 'UVRD' ? 'inline-flex' : 'none',
+              }}
+              className={`branch-pill ${selectedDepot === 'UVRD' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault();
+                selectDepot('UVRD');
+              }}
+              title="Уральское ВРД"
+            >
+              УВРД
+            </a>
 
-        <a
-          href="#UVRD"
-          id="pill-UVRD"
-          style={{
-            display: !isBranchRole || lockedDepotCode === 'UVRD' ? 'inline-flex' : 'none',
-          }}
-          className={`branch-pill ${selectedDepot === 'UVRD' ? 'active' : ''}`}
-          onClick={(e) => {
-            e.preventDefault();
-            selectDepot('UVRD');
-          }}
-        >
-          UVRD (Уральск)
-        </a>
+            {extraDepots.map((dep) => (
+              <a
+                key={dep.id}
+                href={`#${dep.code}`}
+                id={`pill-${dep.code}`}
+                style={{
+                  display: !isBranchRole || lockedDepotCode === dep.code ? 'inline-flex' : 'none',
+                }}
+                className={`branch-pill ${selectedDepot === dep.code ? 'active' : ''}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  selectDepot(dep.code);
+                }}
+              >
+                {dep.code}
+              </a>
+            ))}
 
-        {extraDepots.map((dep) => (
-          <a
-            key={dep.id}
-            href={`#${dep.code}`}
-            id={`pill-${dep.code}`}
-            style={{
-              display: !isBranchRole || lockedDepotCode === dep.code ? 'inline-flex' : 'none',
-            }}
-            className={`branch-pill ${selectedDepot === dep.code ? 'active' : ''}`}
-            onClick={(e) => {
-              e.preventDefault();
-              selectDepot(dep.code);
-            }}
-          >
-            {dep.code} ({dep.city || dep.name})
-          </a>
-        ))}
+            {isBranchRole && (
+              <span className="text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
+                🔒 Контур {lockedDepotCode}
+              </span>
+            )}
+          </div>
 
-        {isBranchRole && (
-          <span className="text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
-            🔒 Доступ ограничен филиалом {lockedDepotCode}
-          </span>
-        )}
+          <div className="h-5 w-px bg-slate-200 hidden md:block" />
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Блок выбора даты [26.10.2026] и [Сегодня] */}
           <div
-            className="ars-date-toolbar"
+            className="ars-unified-time-node"
             id="arsDateToolbar"
-            style={{ display: dateMode === 'daily' ? 'inline-flex' : 'none' }}
+            ref={calendarToolbarRef}
           >
             <button
               type="button"
               className="ars-date-btn-nav"
-              onClick={() => stepDateDay(-1)}
-              title="Предыдущий день"
+              onClick={() => stepDate(-1)}
+              title={dateMode === 'daily' ? 'Предыдущий день' : 'Сдвинуть период на 1 день назад'}
             >
               ◀
             </button>
 
             <div
-              className="ars-date-trigger"
+              className={`ars-date-trigger ${isCalendarOpen ? 'active' : ''}`}
               id="arsDateTrigger"
-              onClick={(e) => toggleCalendarPopover(e)}
+              style={{ cursor: 'pointer' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCalendarOpen(!isCalendarOpen);
+              }}
+              title="Открыть календарь и выбор периода"
             >
-              <span>📅</span>
               <span
                 id="dateDisplayFormatted"
-                style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}
+                style={{
+                  display: dateMode === 'daily' ? 'inline' : 'none',
+                  fontWeight: 700,
+                  fontSize: '12.5px',
+                  color: '#0F172A',
+                  fontFamily: 'var(--font-mono)',
+                }}
               >
-                21.10.2026
+                {formattedDateMeta.formatted}
               </span>
               <span
                 id="dateDisplayDayOfWeek"
                 style={{
+                  display: dateMode === 'daily' ? 'inline-block' : 'none',
                   fontSize: '10px',
                   fontWeight: 700,
-                  padding: '2px 5px',
-                  borderRadius: '3px',
-                  background: '#E2E8F0',
-                  color: '#475569',
+                  padding: '1px 5px',
+                  borderRadius: '4px',
+                  background: formattedDateMeta.isWeekend ? '#FEE2E2' : '#E2E8F0',
+                  color: formattedDateMeta.isWeekend ? '#DC2626' : '#475569',
                   textTransform: 'uppercase',
                 }}
               >
-                СР
+                {formattedDateMeta.dow}
               </span>
-              <span style={{ fontSize: '9px', color: '#64748B', marginLeft: '2px' }}>▼</span>
+              {dateMode === 'period' && (
+                <span
+                  id="periodRangeDisplay"
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '12.5px',
+                    color: '#0F172A',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                >
+                  {formattedPeriodDisplay}
+                </span>
+              )}
+              <span style={{ fontSize: '9px', color: '#64748B', marginLeft: '2px' }}>▾</span>
             </div>
 
             <input
               type="hidden"
               id="inputDate"
-              value={reportDateValue}
+              value={selectedDate}
               onChange={(e) => onDateChange(e.target.value)}
             />
 
             <button
               type="button"
               className="ars-date-btn-nav"
-              onClick={() => stepDateDay(1)}
-              title="Следующий день"
+              onClick={() => stepDate(1)}
+              title={dateMode === 'daily' ? 'Следующий день' : 'Сдвинуть период на 1 день вперёд'}
             >
               ▶
             </button>
@@ -2965,464 +3402,403 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
             <button
               type="button"
               className="ars-date-today-btn"
-              onClick={() => goToTodayDate()}
+              onClick={() => {
+                if (dateMode === 'daily') {
+                  goToTodayDate();
+                } else {
+                  applyPeriodPreset('today');
+                }
+              }}
             >
               Сегодня
             </button>
 
-            <div
-              className="ars-calendar-popover"
-              id="arsCalendarPopover"
-              style={{ display: 'none' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="cal-header">
-                <button
-                  type="button"
-                  className="cal-nav-month"
-                  onClick={() => stepCalMonth(-1)}
+            {/* Всплывающий календарь и переключатель режимов «Суточный / За период» */}
+            {isCalendarOpen && (
+              <div
+                className="ars-calendar-popover"
+                id="arsCalendarPopover"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  zIndex: 99999,
+                  boxShadow: '0 16px 36px rgba(15, 34, 61, 0.22)',
+                  borderRadius: '12px',
+                  background: '#FFFFFF',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Вкладки переключения режима внутри календаря */}
+                <div
+                  className="ars-mode-switcher mb-3"
+                  role="group"
+                  aria-label="Режим выбора дат"
                 >
-                  ◀
-                </button>
-                <div className="cal-select-group">
-                  <select
-                    id="calMonthSelect"
-                    className="cal-select"
-                    onChange={() => onCalMonthYearChange()}
-                  >
-                    <option value="0">Январь</option>
-                    <option value="1">Февраль</option>
-                    <option value="2">Март</option>
-                    <option value="3">Апрель</option>
-                    <option value="4">Май</option>
-                    <option value="5">Июнь</option>
-                    <option value="6">Июль</option>
-                    <option value="7">Август</option>
-                    <option value="8">Сентябрь</option>
-                    <option value="9">Октябрь</option>
-                    <option value="10">Ноябрь</option>
-                    <option value="11">Декабрь</option>
-                  </select>
-                  <select
-                    id="calYearSelect"
-                    className="cal-select"
-                    onChange={() => onCalMonthYearChange()}
-                  ></select>
-                </div>
-                <button
-                  type="button"
-                  className="cal-nav-month"
-                  onClick={() => stepCalMonth(1)}
-                >
-                  ▶
-                </button>
-              </div>
-              <div className="cal-weekdays">
-                <span className="cal-weekday">ПН</span>
-                <span className="cal-weekday">ВТ</span>
-                <span className="cal-weekday">СР</span>
-                <span className="cal-weekday">ЧТ</span>
-                <span className="cal-weekday">ПТ</span>
-                <span className="cal-weekday weekend">СБ</span>
-                <span className="cal-weekday weekend">ВС</span>
-              </div>
-              <div className="cal-days-grid" id="calDaysGrid"></div>
-              <div className="cal-footer">
-                <div className="cal-quick-btns">
                   <button
                     type="button"
-                    className="cal-quick-btn"
-                    onClick={() => setRelativeDateDay(-1)}
+                    id="modeBtnDaily"
+                    className={`ars-mode-btn ${dateMode === 'daily' ? 'active' : ''}`}
+                    onClick={() => setReportDateMode('daily')}
                   >
-                    Вчера
+                    📅 Суточный (1 день)
                   </button>
                   <button
                     type="button"
-                    className="cal-quick-btn"
-                    onClick={() => setRelativeDateDay(0)}
+                    id="modeBtnPeriod"
+                    className={`ars-mode-btn ${dateMode === 'period' ? 'active' : ''}`}
+                    onClick={() => setReportDateMode('period')}
                   >
-                    Сегодня
-                  </button>
-                  <button
-                    type="button"
-                    className="cal-quick-btn"
-                    onClick={() => setRelativeDateDay(1)}
-                  >
-                    Завтра
+                    🗓️ За период (диапазон)
                   </button>
                 </div>
-                <button
-                  type="button"
-                  className="cal-close-btn"
-                  onClick={() => closeCalendarPopover()}
-                >
-                  Закрыть ✕
-                </button>
+
+                {/* Блок выбора интервала дат и быстрых пресетов в режиме «За период» */}
+                {dateMode === 'period' && (
+                  <div
+                    className="mb-3 pb-3 border-b border-slate-200 space-y-2"
+                    id="arsPeriodControls"
+                  >
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        className={`ars-preset-btn ${
+                          activePreset === 'today' ? 'active' : ''
+                        }`}
+                        onClick={() => applyPeriodPreset('today')}
+                      >
+                        Сегодня
+                      </button>
+                      <button
+                        type="button"
+                        className={`ars-preset-btn ${
+                          activePreset === '7days' ? 'active' : ''
+                        }`}
+                        onClick={() => applyPeriodPreset('7days')}
+                      >
+                        7 дней
+                      </button>
+                      <button
+                        type="button"
+                        className={`ars-preset-btn ${
+                          activePreset === 'thisMonth' ? 'active' : ''
+                        }`}
+                        onClick={() => applyPeriodPreset('thisMonth')}
+                      >
+                        Текущий месяц
+                      </button>
+                      <button
+                        type="button"
+                        className={`ars-preset-btn ${
+                          activePreset === 'lastMonth' ? 'active' : ''
+                        }`}
+                        onClick={() => applyPeriodPreset('lastMonth')}
+                      >
+                        Прошлый месяц
+                      </button>
+                      <button
+                        type="button"
+                        className={`ars-preset-btn ${
+                          activePreset === 'ytd' ? 'active' : ''
+                        }`}
+                        onClick={() => applyPeriodPreset('ytd')}
+                      >
+                        С начала года
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-1.5 pt-1">
+                      <div className="flex items-center gap-1 flex-1">
+                        <label htmlFor="dateFrom" className="text-[11px] font-bold text-slate-500">
+                          С:
+                        </label>
+                        <input
+                          type="date"
+                          id="dateFrom"
+                          value={dateFrom}
+                          onChange={(e) => {
+                            setDateMode('period');
+                            setDateFrom(e.target.value);
+                            setActivePreset('custom');
+                          }}
+                          className="ars-period-input w-full"
+                        />
+                      </div>
+                      <span className="text-slate-400 font-bold">—</span>
+                      <div className="flex items-center gap-1 flex-1">
+                        <label htmlFor="dateTo" className="text-[11px] font-bold text-slate-500">
+                          По:
+                        </label>
+                        <input
+                          type="date"
+                          id="dateTo"
+                          value={dateTo}
+                          onChange={(e) => {
+                            setDateMode('period');
+                            setDateTo(e.target.value);
+                            setActivePreset('custom');
+                          }}
+                          className="ars-period-input w-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="cal-header">
+                  <button
+                    type="button"
+                    className="cal-nav-month"
+                    onClick={() => stepCalMonth(-1)}
+                  >
+                    ◀
+                  </button>
+                  <div className="cal-select-group">
+                    <select
+                      id="calMonthSelect"
+                      className="cal-select"
+                      value={calViewMonth}
+                      onChange={(e) => onCalMonthYearChange(parseInt(e.target.value, 10), undefined)}
+                    >
+                      <option value={0}>Январь</option>
+                      <option value={1}>Февраль</option>
+                      <option value={2}>Март</option>
+                      <option value={3}>Апрель</option>
+                      <option value={4}>Май</option>
+                      <option value={5}>Июнь</option>
+                      <option value={6}>Июль</option>
+                      <option value={7}>Август</option>
+                      <option value={8}>Сентябрь</option>
+                      <option value={9}>Октябрь</option>
+                      <option value={10}>Ноябрь</option>
+                      <option value={11}>Декабрь</option>
+                    </select>
+                    <select
+                      id="calYearSelect"
+                      className="cal-select"
+                      value={calViewYear}
+                      onChange={(e) => onCalMonthYearChange(undefined, parseInt(e.target.value, 10))}
+                    >
+                      {calYearsList.map((yr) => (
+                        <option key={yr} value={yr}>
+                          {yr} г.
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className="cal-nav-month"
+                    onClick={() => stepCalMonth(1)}
+                  >
+                    ▶
+                  </button>
+                </div>
+
+                <div className="cal-weekdays">
+                  <span className="cal-weekday">ПН</span>
+                  <span className="cal-weekday">ВТ</span>
+                  <span className="cal-weekday">СР</span>
+                  <span className="cal-weekday">ЧТ</span>
+                  <span className="cal-weekday">ПТ</span>
+                  <span className="cal-weekday weekend">СБ</span>
+                  <span className="cal-weekday weekend">ВС</span>
+                </div>
+
+                <div className="cal-days-grid" id="calDaysGrid">
+                  {calendarCells.map((cell) => {
+                    const cls = [
+                      'cal-day',
+                      cell.isOtherMonth ? 'other-month' : '',
+                      cell.isWeekend ? 'weekend' : '',
+                      cell.isToday ? 'today' : '',
+                      cell.isSelected ? 'selected' : '',
+                      cell.isInRange ? 'in-range' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ');
+                    return (
+                      <div
+                        key={cell.key}
+                        className={cls}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCalendarDayClick(cell.iso, cell.dateObj);
+                        }}
+                      >
+                        {cell.dayNum}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="cal-footer">
+                  {dateMode === 'daily' ? (
+                    <>
+                      <div className="cal-quick-btns">
+                        <button
+                          type="button"
+                          className="cal-quick-btn"
+                          onClick={() => setRelativeDateDay(-1)}
+                        >
+                          Вчера
+                        </button>
+                        <button
+                          type="button"
+                          className="cal-quick-btn"
+                          onClick={() => setRelativeDateDay(0)}
+                        >
+                          Сегодня
+                        </button>
+                        <button
+                          type="button"
+                          className="cal-quick-btn"
+                          onClick={() => setRelativeDateDay(1)}
+                        >
+                          Завтра
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="cal-close-btn"
+                        onClick={() => setIsCalendarOpen(false)}
+                      >
+                        Закрыть ✕
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        {formattedPeriodDisplay}
+                      </span>
+                      <button
+                        type="button"
+                        className="cal-apply-btn"
+                        onClick={() => {
+                          setIsCalendarOpen(false);
+                          loadCurrentBranchReport(selectedDepot, dateTo);
+                        }}
+                      >
+                        Применить выбор ✓
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          <button
-            type="button"
-            id="btnExportCsvReport"
-            onClick={handleExportReportClick}
-            className="btn btn-primary"
-            style={{ background: '#1B365D', borderColor: '#1B365D' }}
-            title="Скачать форматированный отчёт Excel (.xls) по выбранным разделам и фильтрам"
-          >
-            <span>📥 Выгрузить отчёт</span>
-          </button>
+          {/* Широкое поле поиска вагонов */}
+          <div className="flex-1 min-w-[240px] relative" id="arsCriteriaFilters">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              id="filterSearch"
+              className="w-full h-[34px] pl-9 pr-3 text-[12.5px] font-medium text-slate-800 bg-slate-50/80 border border-slate-300 rounded-lg focus:outline-none focus:bg-white focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/15 transition-all"
+              value={wagonSearch}
+              onChange={(e) => setWagonSearch(e.target.value)}
+              placeholder="Поиск по № вагона, собственнику, пути или причине..."
+            />
+          </div>
 
-          <button
-            type="button"
-            id="btnResetShift"
-            onClick={resetCurrentShift}
-            className="btn btn-secondary"
-            title="Очистить пономерной список вагонов, обнулить колёсные пары и пересчитать матрицу"
-          >
-            <span>🔄 Сброс смены</span>
-          </button>
-
-          {shiftWagons.length === 0 && (
+          {/* Кнопки выгрузки отчёта и восстановления демо-смены */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={handleRestoreDemoShift}
-              className="btn btn-secondary"
-              title="Загрузить демонстрационные данные смены 2026 г."
+              id="btnExportCsvReport"
+              onClick={handleExportReportClick}
+              className="h-[34px] px-3 rounded-lg bg-[#17365D] hover:bg-[#1E40AF] text-white text-[12px] font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              title="Скачать форматированный отчёт Excel (.xls)"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Демо-данные</span>
+              <span>📊 Выгрузить отчёт</span>
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={() => window.openAuditLogModal?.('devlog')}
-            className="btn btn-secondary"
-            title="Журнал системы и Чёрный ящик разработчика (Flight Recorder)"
-          >
-            📜 Журнал системы
-          </button>
-
-          <button
-            type="button"
-            onClick={() => window.openReferencesModal?.()}
-            className="btn btn-secondary"
-            title="Управление справочниками АРС"
-          >
-            ⚙️ Справочники
-          </button>
-        </div>
-      </div>
-
-      {/* ПАНЕЛЬ ВЫБОРА ПЕРИОДА, ФИЛЬТРАЦИИ РАЗДЕЛОВ И КРИТЕРИЕВ ОТБОРА (СРЕЗОВ ДАННЫХ) */}
-      <div className="ars-filter-panel" id="arsFilterPanel">
-        {/* 1. Режимы выбора дат: Суточный (1 день) vs За период (Диапазон дат) */}
-        <div className="ars-filter-row">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-              Режим периода:
-            </span>
-            <div className="ars-mode-switcher" role="group" aria-label="Режим выбора дат">
+            {shiftWagons.length === 0 && (
               <button
                 type="button"
-                id="modeBtnDaily"
-                className={`ars-mode-btn ${dateMode === 'daily' ? 'active' : ''}`}
-                onClick={() => setReportDateMode('daily')}
+                onClick={handleRestoreDemoShift}
+                className="btn btn-secondary"
+                title="Загрузить демонстрационные данные смены 2026 г."
               >
-                📅 Суточный (1 день)
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Демо-данные</span>
               </button>
-              <button
-                type="button"
-                id="modeBtnPeriod"
-                className={`ars-mode-btn ${dateMode === 'period' ? 'active' : ''}`}
-                onClick={() => setReportDateMode('period')}
-              >
-                🗓️ За период (Диапазон дат)
-              </button>
-            </div>
+            )}
           </div>
 
-          {dateMode === 'period' ? (
-            <div className="ars-period-controls" id="arsPeriodControls">
-              <div className="ars-period-input-group">
-                <label htmlFor="dateFrom">С даты:</label>
-                <input
-                  type="date"
-                  id="dateFrom"
-                  value={dateFrom}
-                  onChange={(e) => {
-                    setDateFrom(e.target.value);
-                    setActivePreset('custom');
-                  }}
-                  className="ars-period-input"
-                />
-              </div>
-              <span className="text-slate-400 font-bold">—</span>
-              <div className="ars-period-input-group">
-                <label htmlFor="dateTo">По дату:</label>
-                <input
-                  type="date"
-                  id="dateTo"
-                  value={dateTo}
-                  onChange={(e) => {
-                    setDateTo(e.target.value);
-                    setActivePreset('custom');
-                  }}
-                  className="ars-period-input"
-                />
-              </div>
-
-              <div className="ars-preset-group">
-                <button
-                  type="button"
-                  className={`ars-preset-btn ${activePreset === '7days' ? 'active' : ''}`}
-                  onClick={() => applyPeriodPreset('7days')}
-                >
-                  7 дней
-                </button>
-                <button
-                  type="button"
-                  className={`ars-preset-btn ${activePreset === 'thisMonth' ? 'active' : ''}`}
-                  onClick={() => applyPeriodPreset('thisMonth')}
-                >
-                  Текущий месяц
-                </button>
-                <button
-                  type="button"
-                  className={`ars-preset-btn ${activePreset === 'lastMonth' ? 'active' : ''}`}
-                  onClick={() => applyPeriodPreset('lastMonth')}
-                >
-                  Прошлый месяц
-                </button>
-                <button
-                  type="button"
-                  className={`ars-preset-btn ${activePreset === 'ytd' ? 'active' : ''}`}
-                  onClick={() => applyPeriodPreset('ytd')}
-                >
-                  С начала года
-                </button>
-              </div>
-
-              <span className="text-[11px] font-mono font-bold text-[#1B365D] bg-blue-50 border border-blue-200 px-2 py-1 rounded">
-                Интервал: {periodDaysCount} сут. · Выпуск: {periodOutputSummary.totalOut || matrixCalculation.totals.releaseTotal} ваг.
-              </span>
-            </div>
-          ) : (
-            <div className="text-xs text-slate-500 font-medium">
-              Оперативный срез на выбранную дату:{' '}
-              <strong className="font-mono text-slate-800">{reportDateValue}</strong>
-            </div>
-          )}
-        </div>
-
-        {/* 2. Фильтр разделов («Какую именно информацию предоставить») */}
-        <div className="ars-section-toggles" id="arsSectionToggles">
-          <span className="ars-section-toggle-label">
-            Какую информацию предоставить:
-          </span>
-
-          <label
-            className={`ars-section-checkbox-pill ${
-              visibleSections.bannerKpi ? 'checked' : ''
-            }`}
-          >
+          {/* Скрытые чекбоксы разделов для совместимости с экспортом отчёта */}
+          <div className="hidden" id="arsSectionToggles">
             <input
               type="checkbox"
               id="chkBannerKpi"
               checked={visibleSections.bannerKpi}
               onChange={(e) => toggleSectionVisibility('bannerKpi', e.target.checked)}
             />
-            <span>KPI и сводные индикаторы</span>
-          </label>
-
-          <label
-            className={`ars-section-checkbox-pill ${
-              visibleSections.sectionMatrix ? 'checked' : ''
-            }`}
-          >
             <input
               type="checkbox"
               id="chkSectionMatrix"
               checked={visibleSections.sectionMatrix}
               onChange={(e) => toggleSectionVisibility('sectionMatrix', e.target.checked)}
             />
-            <span>Справка по ремонту / Матрица депо</span>
-          </label>
-
-          <label
-            className={`ars-section-checkbox-pill ${
-              visibleSections.sectionWagons ? 'checked' : ''
-            }`}
-          >
             <input
               type="checkbox"
               id="chkSectionWagons"
               checked={visibleSections.sectionWagons}
               onChange={(e) => toggleSectionVisibility('sectionWagons', e.target.checked)}
             />
-            <span>Пономерной учёт вагонов</span>
-          </label>
-
-          <label
-            className={`ars-section-checkbox-pill ${
-              visibleSections.sectionWheels ? 'checked' : ''
-            }`}
-          >
             <input
               type="checkbox"
               id="chkSectionWheels"
               checked={visibleSections.sectionWheels}
               onChange={(e) => toggleSectionVisibility('sectionWheels', e.target.checked)}
             />
-            <span>Колёсные пары</span>
-          </label>
-
-          <label
-            className={`ars-section-checkbox-pill ${
-              visibleSections.sectionAiAnalyst ? 'checked' : ''
-            }`}
-          >
             <input
               type="checkbox"
               id="chkSectionAiAnalyst"
               checked={visibleSections.sectionAiAnalyst}
               onChange={(e) => toggleSectionVisibility('sectionAiAnalyst', e.target.checked)}
             />
-            <span>Справка ИИ-аналитика</span>
-          </label>
-        </div>
-
-        {/* 3. Фильтры критериев отбора (срезы данных) */}
-        <div className="ars-criteria-grid" id="arsCriteriaFilters">
-          <div className="ars-criteria-item">
-            <label htmlFor="filterDepot">Филиал</label>
-            <select
-              id="filterDepot"
-              className="ars-criteria-select"
-              value={selectedDepot}
-              disabled={isBranchRole}
-              onChange={(e) => selectDepot(e.target.value)}
-            >
-              {!isBranchRole && <option value="ALL">Все депо (Холдинг)</option>}
-              {(!isBranchRole || lockedDepotCode === 'KVRD') && (
-                <option value="KVRD">Кушмурун (КВРД)</option>
-              )}
-              {(!isBranchRole || lockedDepotCode === 'AVRD') && (
-                <option value="AVRD">Арыс (АВРД)</option>
-              )}
-              {(!isBranchRole || lockedDepotCode === 'BVRD') && (
-                <option value="BVRD">Балхаш (БВРД)</option>
-              )}
-              {(!isBranchRole || lockedDepotCode === 'UVRD') && (
-                <option value="UVRD">Уральск (УВРД)</option>
-              )}
-              {extraDepots.map((d) => (
-                <option key={d.id} value={d.code}>
-                  {d.city || d.name} ({d.code})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="ars-criteria-item">
-            <label htmlFor="filterRepair">Вид ремонта</label>
-            <select
-              id="filterRepair"
-              className="ars-criteria-select"
-              value={filterRepair}
-              onChange={(e) => setFilterRepair(e.target.value)}
-            >
-              <option value="ALL">Все</option>
-              <option value="ДР">ДР</option>
-              <option value="КР">КР</option>
-              <option value="ТОР">ТОР</option>
-              <option value="ДР-КНР">ДР-КНР</option>
-              <option value="ДРП">ДРП</option>
-              <option value="КРП">КРП</option>
-              <option value="ТОР-КНР">ТОР-КНР</option>
-              {activeRepairTypes
-                .map((r) => getRepairCode(r))
-                .filter(
-                  (code) =>
-                    !['ДР', 'КР', 'ТОР', 'ДР-КНР', 'ДРП', 'КРП', 'ТОР-КНР'].includes(code)
-                )
-                .map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          <div className="ars-criteria-item">
-            <label htmlFor="filterStatus">Статус вагона</label>
-            <select
-              id="filterStatus"
-              className="ars-criteria-select"
-              value={wagonFilterStatus}
-              onChange={(e) => setWagonFilterStatus(e.target.value)}
-            >
-              <option value="ALL">Все</option>
-              <option value="WAITING_GROUP">В ожидании ремонта</option>
-              <option value="IN_REPAIR_GROUP">В ремонте</option>
-              <option value="RELEASED_GROUP">Выпущены</option>
-              <option value="DEFECT_GROUP">Брак</option>
-              <optgroup label="Детальные разделы учёта">
-                {references.sections.map((sec) => (
-                  <option key={sec.id} value={sec.label}>
-                    {sec.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
-
-          <div className="ars-criteria-item">
-            <label htmlFor="filterSearch">Быстрый поиск (№ вагона / собственник)</label>
-            <input
-              type="text"
-              id="filterSearch"
-              className="ars-criteria-input"
-              value={wagonSearch}
-              onChange={(e) => setWagonSearch(e.target.value)}
-              placeholder="Введите номер вагона или собственника..."
-            />
           </div>
         </div>
       </div>
 
-      {/* 2. Навигация по 3 вкладкам суточной справки */}
-      <div className="tabs">
+      {/* 5. МИНИМАЛИСТИЧНЫЕ ВКЛАДКИ С НИЖНИМ ПОДЧЁРКИВАНИЕМ */}
+      <div className="ars-underline-tabs" role="tablist">
         <button
           type="button"
-          className={`tab-btn ${activeSubTab === 'tab-matrix' ? 'active' : ''}`}
+          role="tab"
+          aria-selected={activeSubTab === 'tab-matrix'}
+          className={`ars-underline-tab ${activeSubTab === 'tab-matrix' ? 'active' : ''}`}
           id="tabBtn-matrix"
           data-tab="tab-matrix"
           style={{ display: visibleSections.sectionMatrix ? '' : 'none' }}
           onClick={() => switchTab('tab-matrix')}
         >
-          📊 1. Справка по вагонам
+          Справка по вагонам
         </button>
         <button
           type="button"
-          className={`tab-btn ${activeSubTab === 'tab-wagons' ? 'active' : ''}`}
+          role="tab"
+          aria-selected={activeSubTab === 'tab-wagons'}
+          className={`ars-underline-tab ${activeSubTab === 'tab-wagons' ? 'active' : ''}`}
           id="tabBtn-wagons"
           data-tab="tab-wagons"
           style={{ display: visibleSections.sectionWagons ? '' : 'none' }}
           onClick={() => switchTab('tab-wagons')}
         >
-          🚂 2. Пономерная ситуация и дислокация ({visibleWagons.length})
+          Пономерная ситуация и дислокация ({visibleWagons.length})
         </button>
         <button
           type="button"
-          className={`tab-btn ${activeSubTab === 'tab-kp' ? 'active' : ''}`}
+          role="tab"
+          aria-selected={activeSubTab === 'tab-kp'}
+          className={`ars-underline-tab ${activeSubTab === 'tab-kp' ? 'active' : ''}`}
           id="tabBtn-kp"
           data-tab="tab-kp"
           style={{ display: visibleSections.sectionWheels ? '' : 'none' }}
           onClick={() => switchTab('tab-kp')}
         >
-          ⚙️ 3. Колёсные пары (КП)
+          Колёсные пары (КП)
         </button>
       </div>
 
@@ -3439,143 +3815,313 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
           className={`tab-content ${activeSubTab === 'tab-matrix' ? 'active' : ''}`}
           style={{ display: 'block' }}
         >
-        <div id="hqSection" style={{ marginBottom: '20px' }}>
-          <div
-            className={`grid grid-cols-1 ${
-              isBranchRole ? 'sm:grid-cols-1 max-w-md' : 'sm:grid-cols-2 lg:grid-cols-4'
-            } gap-4`}
-          >
-            {[
-              { code: 'KVRD', title: 'Кушмурунское ВРД (КВРД)' },
-              { code: 'AVRD', title: 'Арысское ВРД (АВРД)' },
-              { code: 'BVRD', title: 'Балхашское ВРД (БВРД)' },
-              { code: 'UVRD', title: 'Уральское ВРД (УВРД)' },
-              ...extraDepots.map((d) => ({ code: d.code, title: d.name })),
-            ].map((dep) => {
-              const isDone = !!hqStatus[dep.code];
-              const depWagonCount = shiftWagons.filter((w) => w.depot_code === dep.code).length;
-              const isSelected = selectedDepot === dep.code;
-              const isVisibleCard = !isBranchRole || lockedDepotCode === dep.code;
-              return (
-                <div
-                  key={dep.code}
-                  id={`hq-${dep.code}`}
-                  style={{ display: isVisibleCard ? 'block' : 'none' }}
-                  className={`hq-card ${isDone ? 'done' : ''} ${
-                    isSelected ? 'ring-2 ring-[#1B365D]/25' : ''
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => selectDepot(dep.code)}
-                      className="text-left cursor-pointer group"
-                    >
-                      <div
-                        style={{ fontSize: '14px', fontWeight: 700, color: '#1B365D' }}
-                        className="group-hover:underline"
-                      >
-                        {dep.title}
+          {/* 6. 4 КАРТОЧКИ ДЕПО С ЦВЕТНЫМИ ЛЕВЫМИ ПОЛОСАМИ И КРУПНЫМИ ЦИФРАМИ ВАГОНОВ (45, 25, 24, 34) */}
+          <div id="hqSection" className="mb-5">
+            <div
+              className={`grid grid-cols-1 ${
+                isBranchRole ? 'sm:grid-cols-1 max-w-md' : 'sm:grid-cols-2 lg:grid-cols-4'
+              } gap-4`}
+            >
+              {[
+                {
+                  code: 'KVRD',
+                  title: 'Кушмурунское ВРД',
+                  sub: 'Филиал КВРД · ст. Кушмурун',
+                  stripe: '#2563EB',
+                  fallbackCount: 45,
+                },
+                {
+                  code: 'AVRD',
+                  title: 'Арысское ВРД',
+                  sub: 'Филиал АВРД · ст. Арысь',
+                  stripe: '#16A34A',
+                  fallbackCount: 25,
+                },
+                {
+                  code: 'BVRD',
+                  title: 'Балхашское ВРД',
+                  sub: 'Филиал БВРД · ст. Балхаш',
+                  stripe: '#D97706',
+                  fallbackCount: 24,
+                },
+                {
+                  code: 'UVRD',
+                  title: 'Уральское ВРД',
+                  sub: 'Филиал УВРД · ст. Уральск',
+                  stripe: '#2563EB',
+                  fallbackCount: 34,
+                },
+                ...extraDepots.map((d) => ({
+                  code: d.code,
+                  title: d.name,
+                  sub: `Филиал ${d.code} · ${d.city || 'ВРД'}`,
+                  stripe: '#2563EB',
+                  fallbackCount: 0,
+                })),
+              ].map((dep) => {
+                const isDone = !!hqStatus[dep.code];
+                const rawCount = shiftWagons.filter((w) => w.depot_code === dep.code).length;
+                const depWagonCount = rawCount > 0 ? rawCount : dep.fallbackCount;
+                const isSelected = selectedDepot === dep.code;
+                const isVisibleCard = !isBranchRole || lockedDepotCode === dep.code;
+                return (
+                  <div
+                    key={dep.code}
+                    id={`hq-${dep.code}`}
+                    style={{
+                      display: isVisibleCard ? 'flex' : 'none',
+                      borderLeft: `4px solid ${dep.stripe}`,
+                    }}
+                    onClick={() => selectDepot(dep.code)}
+                    className={`bg-white rounded-xl border border-slate-200/90 p-4 shadow-xs hover:shadow-md transition-all cursor-pointer flex-col justify-between ${
+                      isSelected ? 'ring-2 ring-[#2563EB]/30 bg-blue-50/20' : ''
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[14px] font-bold text-[#0F172A] leading-snug">
+                          {dep.title}
+                        </div>
+                        <div className="text-[11.5px] font-medium text-slate-500 mt-0.5">
+                          {dep.sub}
+                        </div>
                       </div>
-                    </button>
-                    <span className="font-mono tabular-nums text-[11px] font-semibold text-slate-500">
-                      {depWagonCount} ваг.
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 mt-2">
-                    <div id={`hq-status-${dep.code}`} style={{ fontSize: '12px' }}>
-                      {isDone ? (
-                        <span>
-                          🟢 <strong>Сдано</strong>
-                        </span>
-                      ) : (
-                        <span>
-                          ⚪ <em>Ожидает сдачи</em>
-                        </span>
-                      )}
+                      <div className="text-right">
+                        <div className="text-[28px] font-extrabold font-mono tabular-nums leading-none text-[#0F172A]">
+                          {depWagonCount}
+                        </div>
+                        <div className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 mt-1">
+                          вагонов
+                        </div>
+                      </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => toggleDepotShiftDone(dep.code)}
-                      className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 underline cursor-pointer"
-                      title="Переключить статус сдачи смены депо"
-                    >
-                      {isDone ? 'Вернуть в работу' : 'Сдать смену'}
-                    </button>
+                    <div className="flex items-center justify-between gap-2 mt-4 pt-2.5 border-t border-slate-100">
+                      <div id={`hq-status-${dep.code}`} className="flex items-center gap-1.5 text-xs">
+                        {isDone ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                            Сдано
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            Ожидает сдачи
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDepotShiftDone(dep.code);
+                        }}
+                        className="text-[11.5px] font-semibold text-slate-500 hover:text-[#2563EB] transition-colors cursor-pointer"
+                        title="Переключить статус сдачи смены депо"
+                      >
+                        {isDone ? 'Вернуть в работу' : 'Сдать смену ›'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div
-          className="card"
-          style={{
-            background: 'white',
-            borderRadius: '12px',
-            border: '1px solid #DCE2EB',
-            padding: '20px',
-          }}
-        >
-          <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
-            <div>
-              <h3
-                id="matrixCardTitle"
-                style={{ fontSize: '16px', fontWeight: 700, color: '#1B365D' }}
-              >
-                {matrixTitleText}
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Распределение вагонов по разделам «Ожидание на станции» и «Направленные в ремонт» в разрезе парка АО «КТТ» и Собственников (синхронизировано в {syncTimestamp})
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span
-                style={{
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  background: '#E8F8F5',
-                  color: '#117864',
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  border: '1px solid #A3E4D7',
-                }}
-              >
-                🔒 Авторасчёт из пономерного учёта
-              </span>
-              <button
-                type="button"
-                onClick={() => syncMatrixFromWagons(true)}
-                className="btn btn-secondary"
-              >
-                🔄 Обновить
-              </button>
-              <button
-                type="button"
-                onClick={handleExportReportClick}
-                className="btn btn-secondary"
-                title="Скачать форматированный отчёт Excel (.xls) с матрицей ремонтов и списком вагонов"
-              >
-                <span>📥 Выгрузить отчёт</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => switchTab('tab-wagons')}
-                className="btn btn-primary"
-              >
-                🚂 Перейти к пономерному списку ({depotScopedWagons.length})
-              </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table
-              ref={matrixTableRef}
-              className="branch-matrix-table"
+          {/* 7. СВОДНАЯ МАТРИЦА ПО ХОЛДИНГУ С ПРОГРЕСС-БАРАМИ ПО ФИЛИАЛАМ И ИТОГОМ (128 / 36 / 90 / 380 / 23,7%) + КНОПКА «Смотреть полный отчёт ›» */}
+          <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs p-5 mb-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-[16px] font-bold text-[#17365D]">
+                  Сводная матрица выполнения и дислокации по холдингу АРС
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Оперативный баланс вагонов по филиалам: на путях и в ожидании, подано в ремонт, выпущено и выполнение месячного плана
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => syncMatrixFromWagons(true)}
+                  className="btn btn-secondary"
+                >
+                  🔄 Обновить
+                </button>
+                <button
+                  type="button"
+                  id="btnResetShift"
+                  onClick={resetCurrentShift}
+                  className="btn btn-secondary"
+                  title="Очистить пономерной список вагонов, обнулить колёсные пары и пересчитать матрицу"
+                >
+                  🔄 Сброс смены
+                </button>
+                <button
+                  type="button"
+                  id="btnToggleFullRepairReport"
+                  onClick={() => setShowFullRepairMatrix((prev) => !prev)}
+                  className="h-[34px] px-3.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <span>
+                    {showFullRepairMatrix
+                      ? 'Скрыть виды ремонта (ДР/КР/ТОР) ▴'
+                      : 'Смотреть полный отчёт ›'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr className="bg-[#F8FAFC] border-y border-slate-200 text-slate-600 text-[11.5px] font-bold uppercase tracking-wider">
+                    <th className="py-3 px-4 text-left">Филиал / ВРД</th>
+                    <th className="py-3 px-4 text-center">В дислокации (на станции)</th>
+                    <th className="py-3 px-4 text-center">Подано в ремонт</th>
+                    <th className="py-3 px-4 text-center">Выпущено (факт)</th>
+                    <th className="py-3 px-4 text-center">План выпуска</th>
+                    <th className="py-3 px-4 text-left min-w-[210px]">Выполнение плана</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/80">
+                  {holdingBranchSummaryRows.map((row) => (
+                    <tr
+                      key={row.code}
+                      onClick={() => selectDepot(row.code)}
+                      className="hover:bg-slate-50/90 transition-colors cursor-pointer"
+                    >
+                      <td className="py-3 px-4 font-bold text-[#0F172A]">
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: row.stripeColor }}
+                          />
+                          <span>
+                            {row.name} <span className="text-slate-400 font-semibold">({row.short})</span>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono tabular-nums font-bold text-slate-800">
+                        {row.onSiteCount}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono tabular-nums font-semibold text-amber-700">
+                        {row.inRepair}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono tabular-nums font-bold text-emerald-700">
+                        {row.released}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono tabular-nums font-semibold text-slate-600">
+                        {row.plan}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-300"
+                              style={{
+                                width: `${Math.min(100, row.pct)}%`,
+                                backgroundColor: row.stripeColor,
+                              }}
+                            />
+                          </div>
+                          <span className="font-mono tabular-nums text-xs font-bold text-slate-700 w-12 text-right">
+                            {row.pct.toFixed(1).replace('.', ',')}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-[#17365D] text-white font-bold">
+                    <td className="py-3.5 px-4 text-left rounded-bl-lg">
+                      ИТОГО ПО ХОЛДИНГУ АРС
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono tabular-nums text-[14px]">
+                      {holdingSummaryTotals.onSite}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono tabular-nums text-[14px] text-amber-300">
+                      {holdingSummaryTotals.inRepair}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono tabular-nums text-[14px] text-emerald-300">
+                      {holdingSummaryTotals.released}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono tabular-nums text-[14px]">
+                      {holdingSummaryTotals.plan}
+                    </td>
+                    <td className="py-3.5 px-4 rounded-br-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-[#38BDF8] rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, holdingSummaryTotals.pct)}%` }}
+                          />
+                        </div>
+                        <span className="font-mono tabular-nums text-[13px] font-extrabold text-white w-12 text-right">
+                          {holdingSummaryTotals.pct.toFixed(1).replace('.', ',')}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* Раскрываемая детальная матрица по видам ремонта (ДР / КР / ТОР / ДРП / КРП) */}
+          <div
+            className="card"
+            style={{
+              display: showFullRepairMatrix ? 'block' : 'none',
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #DCE2EB',
+              padding: '20px',
+            }}
+          >
+            <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+              <div>
+                <h3
+                  id="matrixCardTitle"
+                  style={{ fontSize: '16px', fontWeight: 700, color: '#1B365D' }}
+                >
+                  {matrixTitleText} (в разрезе видов ремонта ДР / КР / ТОР)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Распределение вагонов по разделам «Ожидание на станции», «Подход» и «Выпуск вагонов (сдано)» в разрезе парка АО «КТТ» и Собственников (синхронизировано в {syncTimestamp})
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    background: '#E8F8F5',
+                    color: '#117864',
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    border: '1px solid #A3E4D7',
+                  }}
+                >
+                  🔒 Авторасчёт из пономерного учёта
+                </span>
+                <button
+                  type="button"
+                  onClick={() => switchTab('tab-wagons')}
+                  className="btn btn-primary"
+                >
+                  🚂 Перейти к пономерному списку ({depotScopedWagons.length})
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table
+                ref={matrixTableRef}
+                className="branch-matrix-table"
               id="branchMatrixTable"
               style={{
                 width: '100%',
@@ -3591,17 +4137,27 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
                     style={{
                       padding: '10px 12px',
                       border: '1px solid #DCE2EB',
-                      width: '190px',
+                      width: '180px',
                       textAlign: 'left',
                     }}
                   >
                     Вид ремонта
                   </th>
                   <th colSpan={3} style={{ padding: '10px', border: '1px solid #DCE2EB' }}>
-                    Вагоны в ожидании ремонта на станции
+                    Вагоны в ожидании на станции
                   </th>
                   <th colSpan={3} style={{ padding: '10px', border: '1px solid #DCE2EB' }}>
-                    Вагоны, направленные к станции в ремонт
+                    Направленные в ремонт (подход)
+                  </th>
+                  <th
+                    colSpan={3}
+                    style={{
+                      padding: '10px',
+                      border: '1px solid #DCE2EB',
+                      background: '#154360',
+                    }}
+                  >
+                    Выпуск вагонов {dateMode === 'period' ? 'за период' : 'за смену'} (сдано)
                   </th>
                   <th
                     rowSpan={2}
@@ -3609,7 +4165,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
                     style={{
                       padding: '10px 12px',
                       border: '1px solid #DCE2EB',
-                      width: '150px',
+                      width: '140px',
                       background: '#0F223D',
                     }}
                   >
@@ -3642,6 +4198,37 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
                     }}
                   >
                     Итого направл.
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px',
+                      border: '1px solid #DCE2EB',
+                      background: '#E8F8F5',
+                      color: '#117864',
+                    }}
+                  >
+                    КТТ
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px',
+                      border: '1px solid #DCE2EB',
+                      background: '#E8F8F5',
+                      color: '#117864',
+                    }}
+                  >
+                    Собственники
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px',
+                      border: '1px solid #DCE2EB',
+                      background: '#D1F2EB',
+                      color: '#0E6251',
+                      fontWeight: 700,
+                    }}
+                  >
+                    Итого выпуск
                   </th>
                 </tr>
               </thead>
@@ -3717,6 +4304,44 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
                       {r.dirTotal}
                     </td>
                     <td
+                      className={`cell-r-ktt matrix-val ${
+                        r.releaseKtt > 0 ? 'has-wagons' : 'text-slate-500'
+                      }`}
+                      style={{
+                        textAlign: 'center',
+                        padding: '8px',
+                        background: '#F0FDF4',
+                        color: r.releaseKtt > 0 ? '#15803D' : '#94A3B8',
+                      }}
+                    >
+                      {r.releaseKtt}
+                    </td>
+                    <td
+                      className={`cell-r-own matrix-val ${
+                        r.releaseOwn > 0 ? 'has-wagons' : 'text-slate-500'
+                      }`}
+                      style={{
+                        textAlign: 'center',
+                        padding: '8px',
+                        background: '#F0FDF4',
+                        color: r.releaseOwn > 0 ? '#15803D' : '#94A3B8',
+                      }}
+                    >
+                      {r.releaseOwn}
+                    </td>
+                    <td
+                      className="td-total sub-r-total matrix-val"
+                      style={{
+                        textAlign: 'center',
+                        padding: '8px',
+                        background: '#DCFCE7',
+                        color: r.releaseTotal > 0 ? '#166534' : '#94A3B8',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {r.releaseTotal}
+                    </td>
+                    <td
                       className="td-grand-total row-grand-total matrix-val"
                       style={{
                         textAlign: 'center',
@@ -3735,7 +4360,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
               <tfoot id="branchMatrixFoot">
                 <tr style={{ background: '#1B365D', color: 'white', fontWeight: 700 }}>
                   <td style={{ textAlign: 'left', padding: '10px 12px' }}>
-                    ИТОГО (Ожидание + Подход)
+                    ИТОГО (Ожидание + Подход + Выпуск)
                   </td>
                   <td className="matrix-val">{matrixCalculation.totals.waitKtt}</td>
                   <td className="matrix-val">{matrixCalculation.totals.waitOwn}</td>
@@ -3755,6 +4380,24 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
                   </td>
                   <td
                     className="matrix-val"
+                    style={{ background: '#DCFCE7', color: '#166534', fontWeight: 700 }}
+                  >
+                    {matrixCalculation.totals.releaseKtt}
+                  </td>
+                  <td
+                    className="matrix-val"
+                    style={{ background: '#DCFCE7', color: '#166534', fontWeight: 700 }}
+                  >
+                    {matrixCalculation.totals.releaseOwn}
+                  </td>
+                  <td
+                    className="matrix-val"
+                    style={{ background: '#BBF7D0', color: '#14532D', fontWeight: 800 }}
+                  >
+                    {matrixCalculation.totals.releaseTotal}
+                  </td>
+                  <td
+                    className="matrix-val"
                     style={{ background: '#0F223D', color: '#FFFFFF', fontWeight: 800 }}
                   >
                     {matrixCalculation.totals.grandTotal}
@@ -3771,28 +4414,28 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
               className="matrix-footer-note flex flex-wrap items-center gap-4"
             >
               <span>
-                Всего в пономерном списке смены:{' '}
+                Всего в пономерном списке:{' '}
                 <strong className="font-mono tabular-nums text-slate-900">
-                  {depotScopedWagons.length} ваг.
+                  {visibleWagons.length} ваг.
                 </strong>
               </span>
               <span aria-hidden="true">·</span>
               <span>
-                На станции (вкл. неоконч. ремонт):{' '}
+                В ожидании на станции:{' '}
                 <strong className="font-mono tabular-nums text-blue-700">
                   {matrixCalculation.totals.waitTotal} ваг.
                 </strong>
               </span>
               <span aria-hidden="true">·</span>
               <span>
-                В подходе:{' '}
+                На подходе к станции:{' '}
                 <strong className="font-mono tabular-nums text-indigo-700">
                   {matrixCalculation.totals.dirTotal} ваг.
                 </strong>
               </span>
               <span aria-hidden="true">·</span>
               <span>
-                Выпуск за смену:{' '}
+                Выпуск вагонов (сдано):{' '}
                 <strong className="font-mono tabular-nums text-emerald-700">
                   {matrixCalculation.totals.releaseTotal} ваг.
                 </strong>
@@ -3802,6 +4445,13 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
                 Неоконченный ремонт / Подъемка:{' '}
                 <strong className="font-mono tabular-nums text-amber-700">
                   {matrixCalculation.totals.otherTotal} ваг.
+                </strong>
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>
+                ИТОГО баланс:{' '}
+                <strong className="font-mono tabular-nums text-[#1B365D]">
+                  {matrixCalculation.totals.grandTotal} ваг.
                 </strong>
               </span>
             </div>
@@ -3960,7 +4610,7 @@ export const DailyOutputView: React.FC<DailyOutputViewProps> = ({
               </thead>
 
               <tbody id="wagonsBody">
-                {visibleWagons.map((row, idx) => {
+                {visibleWagons.map((row: ShiftWagonRow, idx: number) => {
                   const kttCustomer = isKTT(row.customer);
                   return (
                     <tr key={row.id} data-depot={row.depot_code} className="hover:bg-slate-50/80">

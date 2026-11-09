@@ -368,3 +368,166 @@ ${tableLines}`;
 2. **Перевыполнение по ТОР:** План по текущему отцепочному ремонту выполнен досрочно на **106,7%** (64 вагона при плане 60, отклонение **+4 вагона**); лидируют КВРД (23 ваг. при плане 20) и УВРД (13 ваг. при плане 10).
 3. **Зоны риска:** Отставание по парку собственников в **КВРД** (выполнено 18 из 66 ваг., или **27,3%**, при этом по парку КТТ в КВРД выполнено **75,2%** — 79 из 105 ваг.) и низкий темп по **БВРД** (**57,3%** выполнения плана — 51 из 89 ваг.).`;
 }
+
+export interface DepotRunRateForecast {
+  depot_code: string;
+  name: string;
+  month_plan: number;
+  done_month: number;
+  current_daily_pace: number;
+  required_daily_pace: number;
+  passport_capacity: number;
+  projected_total: number;
+  projected_pct: number;
+  remaining_plan: number;
+  risk_level: 'on_track' | 'warning' | 'critical';
+}
+
+export function calculateRunRateForecasting(
+  data: ArsDataset,
+  currentDayOfMonth: number = 20,
+  totalDaysInMonth: number = 31
+): DepotRunRateForecast[] {
+  const daysRemaining = Math.max(1, totalDaysInMonth - currentDayOfMonth);
+
+  const overallRows = data.summary_reports.filter(
+    (r) => r.row_index >= 76 && r.row_index <= 79
+  );
+
+  return overallRows.map((row) => {
+    const meta = data.depots.find((d) => d.code === row.depot_code);
+    const capacity = meta?.daily_capacity || 7;
+    const currentPace = currentDayOfMonth > 0 ? Number((row.done_month / currentDayOfMonth).toFixed(1)) : 0;
+    const remaining = Math.max(0, row.month_plan - row.done_month);
+    const requiredPace = Number((remaining / daysRemaining).toFixed(1));
+    const projected = Math.round(row.done_month + currentPace * daysRemaining);
+    const projectedPct = row.month_plan > 0 ? Number(((projected / row.month_plan) * 100).toFixed(1)) : 100;
+
+    let riskLevel: 'on_track' | 'warning' | 'critical' = 'on_track';
+    if (projectedPct < 85 || requiredPace > capacity * 1.3) {
+      riskLevel = 'critical';
+    } else if (projectedPct < 98 || requiredPace > capacity) {
+      riskLevel = 'warning';
+    }
+
+    return {
+      depot_code: row.depot_code,
+      name: meta?.name || row.depot_code,
+      month_plan: row.month_plan,
+      done_month: row.done_month,
+      current_daily_pace: currentPace,
+      required_daily_pace: requiredPace,
+      passport_capacity: capacity,
+      projected_total: projected,
+      projected_pct: projectedPct,
+      remaining_plan: remaining,
+      risk_level: riskLevel,
+    };
+  });
+}
+
+function triggerCsvDownload(content: string, filename: string) {
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+export function exportSummaryToCsv(rows: SummaryReportRow[], filename: string = 'ars_plan_summary_2026.csv'): void {
+  const headers = [
+    'Раздел отчета',
+    'Депо',
+    'Категория ремонта / Заказчик',
+    'План на месяц',
+    'Факт за месяц',
+    'Отклонение от плана',
+    'Процент выполнения (%)',
+    'Выпуск за сутки',
+    'Подача за сутки',
+    'Неоконченный ремонт',
+    'С начала года (YTD)',
+  ];
+
+  const escapeCell = (val: unknown) => {
+    const s = String(val ?? '').replace(/"/g, '""');
+    return `"${s}"`;
+  };
+
+  const lines = [
+    headers.map(escapeCell).join(';'),
+    ...rows.map((r) =>
+      [
+        r.section,
+        r.depot_code,
+        r.repair_category,
+        r.month_plan,
+        r.done_month,
+        r.plan_variance,
+        r.completion_pct,
+        r.done_today,
+        r.staged_today,
+        r.unfinished_repair,
+        r.ytd_total,
+      ]
+        .map(escapeCell)
+        .join(';')
+    ),
+  ];
+
+  triggerCsvDownload(lines.join('\r\n'), filename);
+}
+
+export function exportDislocationToCsv(
+  rows: WagonDislocationRow[],
+  filename: string = 'ars_dislocation_2026.csv'
+): void {
+  const headers = [
+    'Номер вагона',
+    'Отчетная дата',
+    'Период / Лист',
+    'Депо',
+    'Заказчик',
+    'Договор',
+    'Вид ремонта',
+    'Статус ремонта',
+    'Статус (код)',
+    'Дата подачи',
+    'Путь / Локация',
+    'Причина задержки / Детали',
+  ];
+
+  const escapeCell = (val: unknown) => {
+    const s = String(val ?? '').replace(/"/g, '""');
+    return `"${s}"`;
+  };
+
+  const lines = [
+    headers.map(escapeCell).join(';'),
+    ...rows.map((w) =>
+      [
+        w.wagon_number,
+        w.report_date,
+        w.raw_sheet,
+        w.depot_code,
+        w.customer_name,
+        w.contract_info,
+        w.repair_type,
+        w.status_ru,
+        w.status,
+        w.formatted_submission_date,
+        w.track_or_location,
+        w.reason_details,
+      ]
+        .map(escapeCell)
+        .join(';')
+    ),
+  ];
+
+  triggerCsvDownload(lines.join('\r\n'), filename);
+}
+

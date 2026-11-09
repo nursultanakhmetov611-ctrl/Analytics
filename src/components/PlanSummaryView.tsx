@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { ArrowUpRight, Filter } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ArrowUpRight, Filter, Download, TrendingUp, AlertCircle } from 'lucide-react';
 import { ArsDataset, SummaryReportRow } from '../types/ars';
+import { calculateRunRateForecasting, exportSummaryToCsv } from '../utils/arsEngine';
 
 interface PlanSummaryViewProps {
   data: ArsDataset;
@@ -28,6 +29,8 @@ const DEPOT_FILTERS = [
 export const PlanSummaryView: React.FC<PlanSummaryViewProps> = ({ data, onAskAnalyst }) => {
   const [selectedSection, setSelectedSection] = useState<string>('ALL_KEY');
   const [selectedDepot, setSelectedDepot] = useState<string>('ALL');
+
+  const forecasts = useMemo(() => calculateRunRateForecasting(data, 20, 31), [data]);
 
   const depotFilters = [
     { code: 'ALL', label: 'Все депо и ИТОГО' },
@@ -57,6 +60,7 @@ export const PlanSummaryView: React.FC<PlanSummaryViewProps> = ({ data, onAskAna
     const matchesDepot = selectedDepot === 'ALL' ? true : row.depot_code === selectedDepot;
     return matchesSection && matchesDepot;
   });
+
 
   return (
     <div className="space-y-6">
@@ -146,6 +150,69 @@ export const PlanSummaryView: React.FC<PlanSummaryViewProps> = ({ data, onAskAna
         })}
       </div>
 
+      {/* Analytical Run-Rate & Forecast Section */}
+      <div className="bg-slate-900 text-white rounded-xl p-5 border border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-400 shrink-0" />
+            <h3 className="text-sm font-bold text-white tracking-tight">
+              Оперативный прогноз выполнения месячного плана (Run-Rate на 20.10.2026)
+            </h3>
+          </div>
+          <span className="text-xs text-slate-400 font-mono tabular-nums">
+            Осталось рабочих дней в октябре: 11 дн.
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {forecasts.map((f) => (
+            <div key={f.depot_code} className="bg-slate-800/80 rounded-lg p-3.5 border border-slate-700/60">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="font-bold text-white text-sm">{f.depot_code}</span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                    f.risk_level === 'critical'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      : f.risk_level === 'warning'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  }`}
+                >
+                  {f.risk_level === 'critical'
+                    ? 'Риск срыва'
+                    : f.risk_level === 'warning'
+                    ? 'Требует разгона'
+                    : 'В графике'}
+                </span>
+              </div>
+
+              <div className="space-y-1.5 text-xs text-slate-300">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Фактический темп:</span>
+                  <span className="font-mono tabular-nums font-semibold text-white">{f.current_daily_pace} ваг/сут</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Требуемый темп:</span>
+                  <span className={`font-mono tabular-nums font-semibold ${f.required_daily_pace > f.passport_capacity ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {f.required_daily_pace} ваг/сут
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Паспорт депо:</span>
+                  <span className="font-mono tabular-nums text-slate-300">{f.passport_capacity} ваг/сут</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-700 text-slate-200">
+                  <span>Ожидаемый выпуск:</span>
+                  <span className="font-mono tabular-nums font-bold text-white">
+                    {f.projected_total} ваг ({f.projected_pct}%)
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Main Summary Table Card */}
       <div className="bg-white border border-slate-200 rounded-xl">
         <div className="p-5 border-b border-slate-200 space-y-4">
@@ -158,20 +225,31 @@ export const PlanSummaryView: React.FC<PlanSummaryViewProps> = ({ data, onAskAna
                 Точные показатели плана, факта, отклонений, процента выполнения, суточной подачи и годового итога (YTD)
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                onAskAnalyst(
-                  `Сформируй аналитическую записку по разделу «${
-                    SECTION_FILTERS.find((s) => s.id === selectedSection)?.label
-                  }» с таблицей планов, фактов, отклонений и процента выполнения.`
-                )
-              }
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <span>Выгрузить аналитику раздела в ИИ</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportSummaryToCsv(filteredRows)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                title="Экспорт в Excel / CSV с кодировкой UTF-8 BOM"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-600" />
+                <span>Скачать CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onAskAnalyst(
+                    `Сформируй аналитическую записку по разделу «${
+                      SECTION_FILTERS.find((s) => s.id === selectedSection)?.label
+                    }» с таблицей планов, фактов, отклонений и процента выполнения.`
+                  )
+                }
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <span>Выгрузить аналитику в ИИ</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Interactive Filter Controls */}
