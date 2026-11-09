@@ -1,1106 +1,520 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { LogOut, ShieldCheck, Building2 } from 'lucide-react';
-import { ArsAuthSession, ArsDataset, ArsReferences, ChatMessage } from './types/ars';
-import { AnalystWorkspace } from './components/AnalystWorkspace';
-import { PlanSummaryView } from './components/PlanSummaryView';
-import { DislocationView } from './components/DislocationView';
-import { WheelPairsView } from './components/WheelPairsView';
-import { DailyOutputView } from './components/DailyOutputView';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  LogOut,
+  ShieldCheck,
+  Building2,
+  LayoutDashboard,
+  Wrench,
+  Layers,
+  ChevronDown,
+  ArrowRight,
+  Database,
+  Calendar,
+  Lock,
+} from 'lucide-react';
+import { ArsDataset, ArsReferences } from './types/ars';
+import { PlatformUserSession } from './types/platform';
+import { PLATFORM_MODULES } from './modules/registry';
+import { PLATFORM_ACCOUNTS } from './core/auth/accounts';
+import { ExecutiveDashboard } from './modules/executive/ExecutiveDashboard';
+import { ProductionModule, ProductionTab } from './modules/production/ProductionModule';
 import { ReferencesModal, DEFAULT_ARS_REFERENCES, loadInitialRepairTypes } from './components/ReferencesModal';
 import { LoginModal } from './components/LoginModal';
 import { AuditLogModal } from './components/AuditLogModal';
-import { enrichDataset, generateAnalyticalAnswer } from './utils/arsEngine';
+import { enrichDataset } from './utils/arsEngine';
 import arsDatasetFallback from './data/ars_dataset.json';
 
-type ActiveTab = 'analyst' | 'plans' | 'dislocation' | 'wheelsets' | 'daily';
-
 const STORAGE_KEY_REFS = 'ars_references_2026_v1';
-const STORAGE_KEY_AUTH = 'ars_auth_session_2026_v1';
-
-interface KpiPresetItem {
-  label: string;
-  plan: number;
-  planPctNum: number;
-  planSub: string;
-  fact: number;
-  pct: string;
-  factSub: string;
-  variance: number;
-  varSub: string;
-  ktt: number;
-  own: number;
-  parkSub: string;
-  unfinished: number;
-  unfinishedSub: string;
-  ytd: string;
-  ytdSub: string;
-}
-
-const BRANCH_KPI_PRESETS: Record<string, KpiPresetItem> = {
-  ALL: {
-    label: 'Холдинг АРС (Астана)',
-    plan: 690,
-    planPctNum: 64.9,
-    planSub: 'Выполнение плана: 64,9%',
-    fact: 448,
-    pct: '64,9%',
-    factSub: 'к плану 690 ваг.',
-    variance: -242,
-    varSub: 'План: 690 | Факт: 448',
-    ktt: 223,
-    own: 161,
-    parkSub: 'КТТ: 223 | Собственный: 161',
-    unfinished: 21,
-    unfinishedSub: 'Требует внимания',
-    ytd: '5 058',
-    ytdSub: 'План: 4 100 | +958',
-  },
-  AVRD: {
-    label: 'Арысское ВРД (АВРД)',
-    plan: 280,
-    planPctNum: 72.1,
-    planSub: 'Выполнение плана: 72,1%',
-    fact: 202,
-    pct: '72,1%',
-    factSub: 'к плану 280 ваг.',
-    variance: -78,
-    varSub: 'План: 280 | Факт: 202',
-    ktt: 98,
-    own: 85,
-    parkSub: 'КТТ: 98 | Собственный: 85',
-    unfinished: 14,
-    unfinishedSub: 'Требует внимания',
-    ytd: '1 940',
-    ytdSub: 'План: 1 650 | +290',
-  },
-  KVRD: {
-    label: 'Кушмурунское ВРД (КВРД)',
-    plan: 201,
-    planPctNum: 59.7,
-    planSub: 'Выполнение плана: 59,7%',
-    fact: 120,
-    pct: '59,7%',
-    factSub: 'к плану 201 ваг.',
-    variance: -81,
-    varSub: 'План: 201 | Факт: 120',
-    ktt: 79,
-    own: 18,
-    parkSub: 'КТТ: 79 | Собственный: 18',
-    unfinished: 2,
-    unfinishedSub: 'Требует внимания',
-    ytd: '1 520',
-    ytdSub: 'План: 1 250 | +270',
-  },
-  BVRD: {
-    label: 'Балхашское ВРД (БВРД)',
-    plan: 89,
-    planPctNum: 57.3,
-    planSub: 'Выполнение плана: 57,3%',
-    fact: 51,
-    pct: '57,3%',
-    factSub: 'к плану 89 ваг.',
-    variance: -38,
-    varSub: 'План: 89 | Факт: 51',
-    ktt: 24,
-    own: 18,
-    parkSub: 'КТТ: 24 | Собственный: 18',
-    unfinished: 2,
-    unfinishedSub: 'Требует внимания',
-    ytd: '718',
-    ytdSub: 'План: 550 | +168',
-  },
-  UVRD: {
-    label: 'Уральское ВРД (УВРД)',
-    plan: 120,
-    planPctNum: 62.5,
-    planSub: 'Выполнение плана: 62,5%',
-    fact: 75,
-    pct: '62,5%',
-    factSub: 'к плану 120 ваг.',
-    variance: -45,
-    varSub: 'План: 120 | Факт: 75',
-    ktt: 22,
-    own: 40,
-    parkSub: 'КТТ: 22 | Собственный: 40',
-    unfinished: 3,
-    unfinishedSub: 'Требует внимания',
-    ytd: '880',
-    ytdSub: 'План: 650 | +230',
-  },
-};
-
-const BRANCH_BRIEFING_BY_DEPOT: Record<string, string> = {
-  KVRD: `### Оперативная аналитическая сводка филиала КВРД (Кушмурунское ВРД)
-
-Активирован изолированный контур филиала **КВРД (п. Кушмурун)** за **2026 год** (суточная мощность **7 ваг/сут**, 203 записи пономерной дислокации, остатки и расход КП, выполнение плана на 20.10.2026).
-
-#### 1. Выполнение плана выпуска по филиалу КВРД за октябрь 2026 г. (на 20.10.2026)
-
-| Филиал (Депо) | Город | Мощность | План окт. | Факт окт. | Отклонение | % выполнения | Выпуск сутки | Подача | Неоконч. ремонт | Выпуск YTD |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **КВРД** | Кушмурун | 7 ваг/сут | 201 | 120 | -81 | **59,7%** | 6 | 7 | 2 | **1 520** |
-
-#### 2. Структура выполнения по видам ремонта и заказчикам (КВРД)
-
-| Категория ремонта / Заказчик | План окт. | Факт окт. | Отклонение | % вып. | Неоконч. рем. |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Плановый ремонт (ДР + КР)** | **181** | **97** | **-84** | **53,6%** | **2** |
-| — АО «Казтемиртранс» (КТТ) | 105 | 79 | -26 | **75,2%** | 0 |
-| — Собственники (частный парк, KTZ Express, ЦЖС) | 76 | 18 | -58 | **23,7%** | 2 |
-| **Текущий отцепочный ремонт (ТОР)** | **20** | **23** | **+3** | **115,0%** | **0** |
-
-#### 3. Контроль неоконченного ремонта и простоев по КВРД:
-- **По причине колёсных пар (КП):** вагоны \`94511425\`, \`94303880\`, \`94338605\` (*KTZ Express*, ДР — «По КП») и вагон \`64780950\` (*ПГК Центральная Азия*, ТОР — «Брак КП»).
-- **По причине брака автосцепки:** вагон \`52509312\` (*Феникс Рейл*, КР — «брак автоцепки»).
-- **По причине неподачи в цех / со станции:** вагон \`98333826\` (*АО «KTZ Express»*, ДР — «не подали со станции»), вагон \`61895488\` (*АО «Казтемиртранс»*, КР — «не подан в цех»).
-- **Отстой на тракционных путях КВРД:** на **54 пути** находятся вагоны *ЦЖС* \`42526723(68892)\`, \`58421\`, \`58273\`; на **58 и 59 путях** ожидают ремонта вагоны *АО «Казтемиртранс»* (\`28808749\`, \`28811354\`, \`62600515\`, \`44961172\` и др.) и платформы *ЦЖС* (\`42078436\`, \`42582478\`).`,
-  AVRD: `### Оперативная аналитическая сводка филиала АВРД (Арысское ВРД)
-
-Активирован изолированный контур филиала **АВРД (г. Арыс)** за **2026 год** (суточная мощность **8 ваг/сут**, свод выполнения плана на 20.10.2026).
-
-#### 1. Выполнение плана выпуска по филиалу АВРД за октябрь 2026 г. (на 20.10.2026)
-
-| Филиал (Депо) | Город | Мощность | План окт. | Факт окт. | Отклонение | % выполнения | Выпуск сутки | Подача | Неоконч. ремонт | Выпуск YTD |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **АВРД** | Арыс | 8 ваг/сут | 280 | 202 | -78 | **72,1%** | 8 | 0 | **14** | **1 940** |
-
-#### 2. Структура по видам ремонта (АВРД):
-- **Плановый ремонт:** план 260 ваг., факт 183 ваг. (ДР: 138, КР: 45), неоконченный ремонт — **14 ваг.** (4 ДР, 10 КР).
-- **Текущий отцепочный ремонт (ТОР):** план 20 ваг., факт 19 ваг. (**95,0%**).`,
-  BVRD: `### Оперативная аналитическая сводка филиала БВРД (Балхашское ВРД)
-
-Активирован изолированный контур филиала **БВРД (г. Балхаш)** за **2026 год** (суточная мощность **6 ваг/сут**, свод выполнения плана на 20.10.2026).
-
-#### 1. Выполнение плана выпуска по филиалу БВРД за октябрь 2026 г. (на 20.10.2026)
-
-| Филиал (Депо) | Город | Мощность | План окт. | Факт окт. | Отклонение | % выполнения | Выпуск сутки | Подача | Неоконч. ремонт | Выпуск YTD |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **БВРД** | Балхаш | 6 ваг/сут | 89 | 51 | -38 | **57,3%** | 1 | 6 | **2** | **718** |
-
-#### 2. Структура по видам ремонта (БВРД):
-- **Плановый ремонт:** план 79 ваг., факт 42 ваг. (ДР: 34, КР: 8), неоконченный ремонт — **2 ваг.** (1 ДР КТТ, 1 КР КТТ), суточная подача — **6 ваг.**
-- **Текущий отцепочный ремонт (ТОР):** план 10 ваг., факт 9 ваг. (**90,0%**).`,
-  UVRD: `### Оперативная аналитическая сводка филиала УВРД (Уральское ВРД)
-
-Активирован изолированный контур филиала **УВРД (г. Уральск)** за **2026 год** (суточная мощность **7 ваг/сут**, свод выполнения плана на 20.10.2026).
-
-#### 1. Выполнение плана выпуска по филиалу УВРД за октябрь 2026 г. (на 20.10.2026)
-
-| Филиал (Депо) | Город | Мощность | План окт. | Факт окт. | Отклонение | % выполнения | Выпуск сутки | Подача | Неоконч. ремонт | Выпуск YTD |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **УВРД** | Уральск | 7 ваг/сут | 120 | 75 | -45 | **62,5%** | 0 | 0 | **3** | **880** |
-
-#### 2. Структура по видам ремонта (УВРД):
-- **Плановый ремонт:** план 110 ваг., факт 62 ваг. (ДР: 55, КР: 7), неоконченный ремонт — **2 ваг.** (ДР).
-- **Текущий отцепочный ремонт (ТОР):** план 10 ваг., факт 13 ваг. (**130,0%**), неоконченный ремонт — **1 ваг.**`,
-};
-
-function getInitialBriefingMarkdown(user: ArsAuthSession | null): string {
-  if (user && user.role === 'branch') {
-    const code = (user.depot_code || 'KVRD').toUpperCase();
-    return (
-      BRANCH_BRIEFING_BY_DEPOT[code] ||
-      `### Оперативная аналитическая сводка филиала ${code} (${user.display_name})\n\nАктивирован изолированный контур филиала **${code}** за 2026 год.`
-    );
-  }
-  return INITIAL_BRIEFING_MARKDOWN;
-}
-
-const INITIAL_BRIEFING_MARKDOWN = `### Оперативная аналитическая сводка руководству ТОО «Astana Railway Services» (АРС)
-
-В базу загружен полный производственный массив холдинга за **2026 год** (4 филиала, суммарная мощность **28 ваг/сут**, 81 строка сводного плана/факта на 20.10.2026, 203 записи пономерной дислокации, 191 запись расхода КП, 40 записей запасов КП и 905 записей суточного выпуска за октябрь).
-
-#### 1. Выполнение плана выпуска за октябрь 2026 г. (по состоянию на 20.10.2026)
-
-| Филиал (Депо) | Город | Мощность | План окт. | Факт окт. | Отклонение | % выполнения | Выпуск сутки | Подача | Неоконч. ремонт | Выпуск YTD |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **АВРД** | Арыс | 8 ваг/сут | 280 | 202 | -78 | **72,1%** | 8 | 0 | **14** | — |
-| **УВРД** | Уральск | 7 ваг/сут | 120 | 75 | -45 | **62,5%** | 0 | 0 | 3 | — |
-| **КВРД** | Кушмурун | 7 ваг/сут | 201 | 120 | -81 | **59,7%** | 6 | 7 | 2 | — |
-| **БВРД** | Балхаш | 6 ваг/сут | 89 | 51 | -38 | **57,3%** | 1 | 6 | 2 | — |
-| **ИТОГО АРС** | **Холдинг** | **28 ваг/сут** | **690** | **448** | **-242** | **64,9%** | **15** | **13** | **21** | **5 058** |
-
-#### 2. Выполнение плана по видам ремонта и ключевым заказчикам
-
-| Категория ремонта / Заказчик | План окт. | Факт окт. | Отклонение | % вып. | Неоконч. рем. | С нач. года (YTD) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Плановый ремонт — ВСЕГО** | **630** | **384** | **-246** | **61,0%** | **20** | **4 131** |
-| — Деповской ремонт (ДР, всего) | 507 | 305 | -202 | 60,2% | 7 | 3 365 |
-| — Капитальный ремонт (КР, всего) | 123 | 79 | -44 | 64,2% | 13 | 737 |
-| **АО «Казтемиртранс» (КТТ — всего)** | **375** | **223** | **-152** | **59,5%** | **7** | **1 767** |
-| — КТТ: ДР / КР | 294 / 81 | 173 / 50 | -121 / -31 | 58,8% / 61,7% | 2 / 5 | 1 323 / 444 |
-| **Собственники (частный парк, KTZ Express, ЦЖС)** | **255** | **161** | **-94** | **63,1%** | **13** | **2 364** |
-| **Текущий отцепочный ремонт (ТОР — всего)** | **60** | **64** | **+4** | **106,7%** | **1** | **927** |
-
-#### 3. Контроль неоконченного ремонта и простоев (ключевые позиции):
-- **По причине колёсных пар (КП):** вагоны \`94511425\`, \`94303880\`, \`94338605\` (*KTZ Express*, ДР — «По КП») и вагон \`64780950\` (*ПГК Центральная Азия*, ТОР — «Брак КП»).
-- **По причине брака автосцепки:** вагон \`52509312\` (*Феникс Рейл*, КР — «брак автоцепки»).
-- **По причине неподачи в цех / со станции:** вагон \`98333826\` (*АО «KTZ Express»*, ДР — «не подали со станции»), вагон \`61895488\` (*АО «Казтемиртранс»*, КР — «не подан в цех»).
-- **Отстой на тракционных путях КВРД:** на **54 пути** находятся вагоны *ЦЖС* \`42526723(68892)\`, \`58421\`, \`58273\`; на **58 и 59 путях** ожидают ремонта вагоны *АО «Казтемиртранс»* (\`28808749\`, \`28811354\`, \`62600515\`, \`44961172\` и др.) и платформы *ЦЖС* (\`42078436\`, \`42582478\`).`;
+const STORAGE_KEY_AUTH = 'ars_auth_session_2026_v2';
+const STORAGE_KEY_MODULE = 'ars_active_module_2026';
 
 export default function App() {
-  const [data, setData] = useState<ArsDataset | null>(null);
-  const [loadingData, setLoadingData] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('daily');
-  const [selectedWagonNumber, setSelectedWagonNumber] = useState<string>('52509312');
-  const [isQuerying, setIsQuerying] = useState<boolean>(false);
-  const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
+  // Enriched initial dataset
+  const dataset: ArsDataset = useMemo(() => enrichDataset(arsDatasetFallback), []);
 
-  useEffect(() => {
-    const handleWindowScroll = () => {
-      const currentScroll =
-        window.scrollY ||
-        window.pageYOffset ||
-        document.documentElement.scrollTop ||
-        document.body.scrollTop ||
-        0;
-      setShowScrollTop(currentScroll > 70);
-    };
-
-    handleWindowScroll();
-    window.addEventListener('scroll', handleWindowScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', handleWindowScroll);
-    };
-  }, []);
-
-  const handleScrollToTop = useCallback(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-
-  // Active RBAC User Session (null when not logged in -> opens #modalLogin)
-  const [currentUser, setCurrentUser] = useState<ArsAuthSession | null>(() => {
+  // References state
+  const [references, setReferences] = useState<ArsReferences>(() => {
+    if (typeof window === 'undefined') return DEFAULT_ARS_REFERENCES;
     try {
-      const saved =
-        localStorage.getItem(STORAGE_KEY_AUTH) || localStorage.getItem('ars_current_user');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.username && parsed.role && parsed.depot_code) {
+      const stored = localStorage.getItem(STORAGE_KEY_REFS);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.customers && parsed.wagonTypes && parsed.sections && parsed.depots) {
+          if (!parsed.repairs || !Array.isArray(parsed.repairs) || parsed.repairs.length === 0) {
+            parsed.repairs = loadInitialRepairTypes();
+          }
           return parsed;
         }
       }
     } catch (_e) {
-      // ignore localStorage read errors
-    }
-    return null;
-  });
-
-  const [references, setReferences] = useState<ArsReferences>(() => {
-    const initialRepairs = loadInitialRepairTypes();
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_REFS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.customers) && Array.isArray(parsed.depots)) {
-          return {
-            ...parsed,
-            repairs:
-              Array.isArray(parsed.repairs) && parsed.repairs.length > 0
-                ? parsed.repairs
-                : initialRepairs,
-          };
-        }
-      }
-    } catch (_e) {
-      // ignore localStorage read errors
+      // fallback
     }
     return {
       ...DEFAULT_ARS_REFERENCES,
-      repairs: initialRepairs,
+      repairs: loadInitialRepairTypes(),
     };
   });
 
-  const headerRefBtn = useRef<HTMLButtonElement | null>(null);
-
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    {
-      id: 'initial-briefing',
-      role: 'model',
-      text: getInitialBriefingMarkdown(currentUser),
-      timestamp: '20.10.2026 · Свод ПТО АРС',
-    },
-  ]);
-
-  useEffect(() => {
-    window.currentUser = currentUser;
+  // Current user / RBAC session state
+  const [currentUser, setCurrentUser] = useState<PlatformUserSession | null>(() => {
+    if (typeof window === 'undefined') return null;
     try {
-      if (currentUser) {
-        localStorage.setItem('ars_current_user', JSON.stringify(currentUser));
-      } else {
-        localStorage.removeItem('ars_current_user');
+      const stored = localStorage.getItem(STORAGE_KEY_AUTH);
+      if (stored) {
+        return JSON.parse(stored);
       }
     } catch (_e) {
-      // ignore
+      // fallback
     }
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === 'initial-briefing'
-          ? {
-              ...m,
-              text: getInitialBriefingMarkdown(currentUser),
-              timestamp:
-                currentUser?.role === 'branch'
-                  ? `20.10.2026 · Свод филиала ${currentUser.depot_code}`
-                  : '20.10.2026 · Свод ПТО АРС',
-            }
-          : m
-      )
-    );
-    setTimeout(() => {
-      window.isolateAiAnalystForBranch?.();
-    }, 30);
-  }, [currentUser]);
+    // Default session: General Director (Management)
+    const def = PLATFORM_ACCOUNTS.director;
+    return {
+      username: def.username,
+      displayName: def.displayName,
+      department: def.department,
+      departmentName: def.departmentName,
+      position: def.position,
+      branchCode: def.branchCode,
+      role: def.role,
+      dataScope: def.dataScope,
+      permissions: def.permissions,
+      availableModules: def.availableModules,
+      depot_code: def.branchCode,
+      display_name: def.displayName,
+    };
+  });
 
-  useEffect(() => {
-    if (activeTab === 'analyst') {
-      setTimeout(() => {
-        window.isolateAiAnalystForBranch?.();
-      }, 40);
-    }
-  }, [activeTab]);
-
-  const handleLoginSuccess = useCallback((session: ArsAuthSession) => {
-    setCurrentUser(session);
-    window.currentUser = session;
+  // Active platform module
+  const [activeModuleId, setActiveModuleId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'executive';
     try {
-      localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(session));
-      localStorage.setItem('ars_current_user', JSON.stringify(session));
+      const stored = localStorage.getItem(STORAGE_KEY_MODULE);
+      if (stored) return stored;
     } catch (_e) {
       // ignore
     }
-    setTimeout(() => {
-      window.isolateAiAnalystForBranch?.();
-    }, 50);
+    return 'executive';
+  });
+
+  // Production module internal routing
+  const [productionTab, setProductionTab] = useState<ProductionTab>('plans');
+  const [productionDepotFilter, setProductionDepotFilter] = useState<string>('ALL');
+
+  // Modals state
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [isModuleDropdownOpen, setIsModuleDropdownOpen] = useState<boolean>(false);
+
+  // Scroll to top button visibility
+  const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const handleScrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Switch active module with RBAC validation
+  const handleSelectModule = useCallback(
+    (moduleId: string) => {
+      setIsModuleDropdownOpen(false);
+      const mod = PLATFORM_MODULES.find((m) => m.id === moduleId);
+      if (!mod) return;
+
+      // If branch user tries to open executive, branch users are scoped to production
+      if (currentUser && currentUser.role === 'branch' && moduleId === 'executive') {
+        alert('Доступ к Сводке высшего руководства ограничен. Для филиалов открыт контур Производственного отдела.');
+        return;
+      }
+
+      setActiveModuleId(moduleId);
+      try {
+        localStorage.setItem(STORAGE_KEY_MODULE, moduleId);
+      } catch (_e) {
+        // ignore
+      }
+    },
+    [currentUser]
+  );
+
+  // Seamless transition from Executive Dashboard into Production Module
+  const handleNavigateToProduction = useCallback(
+    (tab: ProductionTab = 'plans', depotCode: string = 'ALL') => {
+      setProductionTab(tab);
+      setProductionDepotFilter(depotCode);
+      setActiveModuleId('production');
+      try {
+        localStorage.setItem(STORAGE_KEY_MODULE, 'production');
+      } catch (_e) {
+        // ignore
+      }
+    },
+    []
+  );
+
+  const handleLoginSuccess = useCallback((session: PlatformUserSession) => {
+    setCurrentUser(session);
+    try {
+      localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(session));
+    } catch (_e) {
+      // ignore
+    }
+
+    // Branch users automatically land in production module
+    if (session.role === 'branch') {
+      setActiveModuleId('production');
+    } else {
+      setActiveModuleId('executive');
+    }
   }, []);
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
-    window.currentUser = null;
     try {
       localStorage.removeItem(STORAGE_KEY_AUTH);
-      localStorage.removeItem('ars_current_user');
+    } catch (_e) {
+      // ignore
+    }
+    setIsLoginModalOpen(true);
+  }, []);
+
+  const handleUpdateReferences = useCallback((next: ArsReferences) => {
+    setReferences(next);
+    try {
+      localStorage.setItem(STORAGE_KEY_REFS, JSON.stringify(next));
     } catch (_e) {
       // ignore
     }
   }, []);
 
+  // Global window bindings for backwards-compatibility
   useEffect(() => {
+    window.currentUser = currentUser ? {
+      username: currentUser.username,
+      role: currentUser.role,
+      depot_code: currentUser.branchCode,
+      display_name: currentUser.displayName,
+    } : null;
+    window.currentDepot = currentUser?.branchCode || 'ALL';
     window.handleLogout = handleLogout;
-  }, [handleLogout]);
-
-  // Ensure exact inline onclick="openReferencesModal()" attribute on the header button
-  useEffect(() => {
-    if (headerRefBtn.current) {
-      headerRefBtn.current.setAttribute('onclick', 'openReferencesModal()');
-    }
-  }, []);
-
-  useEffect(() => {
-    // 100% autonomous in-browser dataset initialization with local persistence
-    try {
-      const customSaved = localStorage.getItem('ars_custom_dataset');
-      if (customSaved) {
-        const parsed = JSON.parse(customSaved);
-        if (parsed && Array.isArray(parsed.summary_reports) && parsed.summary_reports.length > 0) {
-          setData(enrichDataset(parsed));
-          setLoadingData(false);
-          return;
-        }
-      }
-    } catch (_e) {
-      // ignore
-    }
-    setData(enrichDataset(arsDatasetFallback));
-    setLoadingData(false);
-  }, []);
-
-  const handleUpdateReferences = (nextRefs: ArsReferences) => {
-    setReferences(nextRefs);
-    try {
-      localStorage.setItem(STORAGE_KEY_REFS, JSON.stringify(nextRefs));
-    } catch (_e) {
-      // ignore storage errors
-    }
-  };
-
-  // Merge active references (depots, wagonTypes) and enforce RBAC branch isolation across all views
-  const effectiveData: ArsDataset | null = useMemo(() => {
-    if (!data) return null;
-    const isBranch = currentUser?.role === 'branch';
-    const branchCode = isBranch ? currentUser.depot_code : null;
-
-    const allDepots = references.depots.map((d) => {
-      const existing = data.depots.find((orig) => orig.code === d.code);
-      return {
-        code: d.code,
-        name: d.name,
-        city: d.city || existing?.city || d.code,
-        daily_capacity: d.daily_capacity ?? existing?.daily_capacity ?? 7,
-      };
-    });
-
-    const allWagonTypes = references.wagonTypes.map((wt) => {
-      const existing = data.wagon_types.find(
-        (orig) => orig.name.toLowerCase() === wt.name.toLowerCase() || orig.code === wt.code
-      );
-      return {
-        code: wt.code || existing?.code || wt.id,
-        name: wt.name,
-        workload_coefficient: wt.workload_coefficient ?? existing?.workload_coefficient ?? 1.0,
-      };
-    });
-
-    if (!branchCode) {
-      return {
-        ...data,
-        depots: allDepots,
-        wagon_types: allWagonTypes,
-      };
-    }
-
-    // Strict isolation for branch master (only their depot's records)
-    return {
-      ...data,
-      depots: allDepots.filter((d) => d.code === branchCode),
-      wagon_types: allWagonTypes,
-      summary_reports: data.summary_reports.filter((r) => r.depot_code === branchCode),
-      wagon_dislocations_and_stalls: data.wagon_dislocations_and_stalls.filter(
-        (w) => w.depot_code === branchCode
-      ),
-      wheel_pairs_production: data.wheel_pairs_production.filter(
-        (wp) => wp.depot_code === branchCode
-      ),
-      wheel_pair_stocks: data.wheel_pair_stocks.filter(
-        (ws) => ws.depot_code === branchCode
-      ),
-      daily_output_october: data.daily_output_october.filter(
-        (d) => d.depot_code === branchCode
-      ),
-    };
-  }, [data, references, currentUser]);
-
-  const handleSendPrompt = (promptText: string) => {
-    setActiveTab('analyst');
-    const nowStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    const scopedPrompt =
-      currentUser?.role === 'branch'
-        ? `[Контур филиала ${currentUser.depot_code} — ${currentUser.display_name}] ${promptText}`
-        : promptText;
-
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      text: promptText,
-      timestamp: nowStr,
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setIsQuerying(true);
-
-    // Completely autonomous browser analysis execution
-    setTimeout(() => {
-      try {
-        const localAnswer = effectiveData
-          ? generateAnalyticalAnswer(scopedPrompt, effectiveData, references)
-          : 'Не удалось сформировать аналитический ответ.';
-        const replyTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `model-${Date.now()}`,
-            role: 'model',
-            text: localAnswer,
-            timestamp: replyTime,
-            source: 'ars-browser-analytical-engine',
-          },
-        ]);
-      } finally {
-        setIsQuerying(false);
-      }
-    }, 120);
-  };
-
-  const handleResetChat = () => {
-    setMessages([
-      {
-        id: 'initial-briefing',
-        role: 'model',
-        text: getInitialBriefingMarkdown(currentUser),
-        timestamp:
-          currentUser?.role === 'branch'
-            ? `20.10.2026 · Свод филиала ${currentUser.depot_code}`
-            : '20.10.2026 · Свод ПТО АРС',
-      },
-    ]);
-  };
-
-  const handleInspectWagon = (wagonNum: string) => {
-    setSelectedWagonNumber(wagonNum);
-    setActiveTab('analyst');
-    handleSendPrompt(
-      `Дай полную аналитическую справку по вагону № ${wagonNum}: укажи заказчика, вид ремонта, депо, текущую локацию/путь, историю статусов и причину простоя.`
-    );
-  };
-
-  const isBranchUser = currentUser?.role === 'branch';
-  const activeDepotKey = isBranchUser
-    ? (currentUser.depot_code || 'BVRD').toUpperCase()
-    : 'ALL';
-
-  const [headerDateText, setHeaderDateText] = useState<string>(() => {
-    const monthsGenitive = [
-      'января',
-      'февраля',
-      'марта',
-      'апреля',
-      'мая',
-      'июня',
-      'июля',
-      'августа',
-      'сентября',
-      'октября',
-      'ноября',
-      'декабря',
-    ];
-    const now = new Date();
-    return `${now.getDate()} ${monthsGenitive[now.getMonth()]} ${now.getFullYear()}`;
-  });
-
-  useEffect(() => {
-    (window as unknown as Record<string, unknown>).updateHeaderDateLabel = (isoStr: string) => {
-      const monthsGenitive = [
-        'января',
-        'февраля',
-        'марта',
-        'апреля',
-        'мая',
-        'июня',
-        'июля',
-        'августа',
-        'сентября',
-        'октября',
-        'ноября',
-        'декабря',
-      ];
-      const parts = isoStr.split('-').map(Number);
-      if (parts.length === 3 && !parts.some(Number.isNaN)) {
-        const dt = new Date(parts[0], parts[1] - 1, parts[2]);
-        setHeaderDateText(`${dt.getDate()} ${monthsGenitive[dt.getMonth()]} ${dt.getFullYear()}`);
+    window.switchTab = (tabId: string) => {
+      if (['analyst', 'plans', 'dislocation', 'wheelsets', 'daily'].includes(tabId)) {
+        setActiveModuleId('production');
+        setProductionTab(tabId as ProductionTab);
       }
     };
-  }, []);
+  }, [currentUser, handleLogout]);
 
-  const currentKpi = BRANCH_KPI_PRESETS[activeDepotKey] || {
-    label: currentUser?.display_name || `Филиал ${activeDepotKey}`,
-    plan: 89,
-    planPctNum: 57.3,
-    planSub: 'Выполнение плана: 57,3%',
-    fact: 51,
-    pct: '57,3%',
-    factSub: 'к плану 89 ваг.',
-    variance: -38,
-    varSub: 'План: 89 | Факт: 51',
-    ktt: 24,
-    own: 18,
-    parkSub: 'КТТ: 24 | Собственный: 18',
-    unfinished: 2,
-    unfinishedSub: 'Требует внимания',
-    ytd: '718',
-    ytdSub: 'План: 550 | +168',
-  };
-
-  const updateShiftMasterKpi = useCallback(
-    (depotCode?: string, customData: Record<string, unknown> | null = null) => {
-      const fallbackDepot =
-        isBranchUser && currentUser?.depot_code
-          ? currentUser.depot_code
-          : typeof window.currentDepot !== 'undefined' && window.currentDepot
-          ? window.currentDepot
-          : 'ALL';
-      const d = (depotCode || fallbackDepot || 'ALL').toUpperCase();
-
-      const depotLabels =
-        typeof window.DEPOT_LABELS !== 'undefined' && window.DEPOT_LABELS
-          ? window.DEPOT_LABELS
-          : {};
-      const refDep = references.depots.find((item) => item.code.toUpperCase() === d);
-      const preset = BRANCH_KPI_PRESETS[d] || BRANCH_KPI_PRESETS.ALL;
-
-      const dName =
-        d === 'ALL'
-          ? 'Холдинг АРС (Астана)'
-          : depotLabels[d] || refDep?.name || preset.label || d;
-
-      // Обновление бейджей и заголовка
-      const badgeDepot = document.getElementById('kpiDepotBadge');
-      if (badgeDepot) {
-        badgeDepot.textContent = dName;
-      }
-
-      const badgeCode = document.getElementById('kpiCodeBadge');
-      if (badgeCode) {
-        badgeCode.textContent = `Депо: ${d}`;
-      }
-
-      const titleEl = document.getElementById('kpiMainTitle');
-      if (titleEl) {
-        titleEl.textContent =
-          d === 'ALL'
-            ? 'Ситуационный центр ремонта грузовых вагонов'
-            : `Ситуационный центр ремонта грузовых вагонов — ${dName}`;
-      }
-
-      // Обновление численных значений 6 плиток
-      const setElText = (id: string, val: string | number) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = String(val);
-      };
-
-      setElText('kpiValPlan', (customData?.plan as number) ?? preset.plan);
-      setElText('kpiSubPlan', (customData?.planSub as string) ?? preset.planSub);
-      setElText('kpiValFact', (customData?.fact as number) ?? preset.fact);
-      setElText('kpiFactPercent', (customData?.pct as string) ?? preset.pct);
-      setElText('kpiSubFact', (customData?.factSub as string) ?? preset.factSub);
-      setElText('kpiValDev', (customData?.variance as number) ?? preset.variance);
-      setElText('kpiSubDev', (customData?.varSub as string) ?? preset.varSub);
-      setElText('kpiValKTT', (customData?.ktt as number) ?? preset.ktt);
-      setElText('kpiValOwn', (customData?.own as number) ?? preset.own);
-      setElText('kpiSubPark', (customData?.parkSub as string) ?? preset.parkSub);
-      setElText('kpiValUnfinished', (customData?.unfinished as number) ?? preset.unfinished);
-      setElText(
-        'kpiSubUnfinished',
-        (customData?.unfinishedSub as string) ?? preset.unfinishedSub
-      );
-      setElText('kpiValYear', (customData?.ytd as string) ?? preset.ytd);
-      setElText('kpiSubYear', (customData?.ytdSub as string) ?? preset.ytdSub);
-
-      const planBar = document.getElementById('kpiPlanProgressBar');
-      if (planBar) {
-        planBar.style.width = `${preset.planPctNum}%`;
-      }
-    },
-    [currentUser, isBranchUser, references.depots]
-  );
-
-  useEffect(() => {
-    window.updateShiftMasterKpi = updateShiftMasterKpi;
-    const targetCode = isBranchUser
-      ? currentUser?.depot_code || 'BVRD'
-      : window.currentDepot || 'ALL';
-    updateShiftMasterKpi(targetCode);
-  }, [updateShiftMasterKpi, currentUser, isBranchUser]);
+  const activeModuleMeta = useMemo(() => {
+    return PLATFORM_MODULES.find((m) => m.id === activeModuleId) || PLATFORM_MODULES[0];
+  }, [activeModuleId]);
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] text-slate-900 flex flex-col">
-      {/* 1. Тёмно-синяя верхняя панель (#17365D, 52px) */}
-      <header
-        className="sticky top-0 z-30 border-b border-[#0F2542]"
-        style={{ background: '#17365D', height: '52px' }}
-      >
-        <div className="max-w-[1440px] h-full mx-auto flex items-center justify-between gap-4 px-6">
-          {/* Бренд + Разделы навигации */}
-          <div className="flex items-center gap-6 min-w-0">
-            <a
-              href="#top"
-              onClick={(e) => {
-                e.preventDefault();
-                setActiveTab('daily');
-              }}
-              className="flex items-center gap-2 text-sm font-extrabold tracking-tight text-white whitespace-nowrap shrink-0"
-            >
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#2563EB] text-white text-xs font-black">
-                АРС
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+      {/* Top Bar Contract (1 row, 3 zones, gap-8) */}
+      <header className="sticky top-0 z-40 bg-white border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
+          {/* Zone 1: Brand title & Platform Identity */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white font-bold text-xs tracking-wider">
+              АРС
+            </div>
+            <div className="leading-tight">
+              <span className="font-bold text-sm text-slate-900 tracking-tight block whitespace-nowrap">
+                Astana Railway Services
               </span>
-              <span>Astana Railway Services</span>
-            </a>
-
-            <nav className="hidden md:flex items-center gap-1.5 text-xs font-semibold">
-              {[
-                { id: 'daily', label: 'Суточный выпуск' },
-                { id: 'analyst', label: 'ИИ-Аналитик' },
-                { id: 'plans', label: 'План и факт' },
-                { id: 'dislocation', label: 'Дислокация вагонов' },
-                { id: 'wheelsets', label: 'Колёсные пары' },
-              ].map((navItem) => {
-                const isAct = activeTab === navItem.id;
-                return (
-                  <button
-                    key={navItem.id}
-                    type="button"
-                    onClick={() => setActiveTab(navItem.id as ActiveTab)}
-                    style={{
-                      background: isAct ? '#2563EB' : 'transparent',
-                      color: isAct ? '#FFFFFF' : '#CBD5E1',
-                    }}
-                    className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                      isAct ? 'font-bold shadow-xs' : 'hover:text-white hover:bg-white/10'
-                    }`}
-                  >
-                    {navItem.label}
-                  </button>
-                );
-              })}
-            </nav>
+              <span className="text-[11px] text-slate-500 block whitespace-nowrap">
+                Корпоративная цифровая платформа
+              </span>
+            </div>
           </div>
 
-          {/* Правая зона: Журнал, Справочники и Профиль */}
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              id="btnHeaderAuditLog"
-              onClick={() => window.openAuditLogModal?.('devlog')}
-              className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-200 bg-white/10 hover:bg-white/20 border border-white/15 transition-colors cursor-pointer whitespace-nowrap"
-              title="Журнал системы и Чёрный ящик разработчика (Flight Recorder)"
-            >
-              Журнал системы
-            </button>
+          {/* Zone 2: Global Module Switcher (App Shell) */}
+          <div className="relative">
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => handleSelectModule('executive')}
+                disabled={currentUser?.role === 'branch'}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                  activeModuleId === 'executive'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : currentUser?.role === 'branch'
+                    ? 'text-slate-400 cursor-not-allowed opacity-60'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title={
+                  currentUser?.role === 'branch'
+                    ? 'Доступно только высшему руководству и ЦА'
+                    : 'Консолидированная витрина высшего руководства'
+                }
+              >
+                <LayoutDashboard className="w-3.5 h-3.5 text-blue-600" />
+                <span>Сводка руководства</span>
+              </button>
 
-            <button
-              ref={headerRefBtn}
-              type="button"
-              onClick={() => window.openReferencesModal?.()}
-              className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-200 bg-white/10 hover:bg-white/20 border border-white/15 transition-colors cursor-pointer whitespace-nowrap"
-              title="Управление справочниками"
-            >
-              Справочники
-            </button>
+              <button
+                type="button"
+                onClick={() => handleSelectModule('production')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                  activeModuleId === 'production'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5 text-amber-600" />
+                <span>Производственный отдел</span>
+                <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded ml-0.5">
+                  Модуль №1
+                </span>
+              </button>
 
-            {currentUser && (
-              <div className="flex items-center gap-2 pl-2 border-l border-white/20">
-                <div className="hidden xl:flex items-center gap-1.5 text-xs text-slate-200">
-                  {currentUser.role === 'headquarters' ? (
-                    <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
-                  ) : (
-                    <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-                  )}
-                  <span className="font-semibold text-white whitespace-nowrap">
-                    {currentUser.display_name}
-                  </span>
+              {/* All Modules Popover Trigger */}
+              <button
+                type="button"
+                onClick={() => setIsModuleDropdownOpen((v) => !v)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  isModuleDropdownOpen || !['executive', 'production'].includes(activeModuleId)
+                    ? 'bg-slate-200 text-slate-900'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-purple-600" />
+                <span>Модули холдинга</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Dropdown Menu of All Platform Modules */}
+            {isModuleDropdownOpen && (
+              <div
+                className="absolute left-0 mt-1.5 w-80 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 divide-y divide-slate-100"
+                onMouseLeave={() => setIsModuleDropdownOpen(false)}
+              >
+                <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Модули корпоративной платформы АРС
+                </div>
+                <div className="py-1 space-y-0.5">
+                  {PLATFORM_MODULES.map((mod) => {
+                    const isActiveModule = activeModuleId === mod.id;
+                    return (
+                      <button
+                        key={mod.id}
+                        type="button"
+                        onClick={() => handleSelectModule(mod.id)}
+                        className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                          isActiveModule
+                            ? 'bg-blue-50 text-blue-900 font-semibold'
+                            : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="font-bold truncate">{mod.title}</div>
+                          <div className="text-[10px] text-slate-500 truncate">{mod.departmentName}</div>
+                        </div>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${
+                            mod.status === 'active'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {mod.status === 'active' ? 'Активен' : mod.roadmapQuarter || 'В плане'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Zone 3: RBAC Session Context & Actions */}
+          <div className="flex items-center gap-3 shrink-0">
+            {currentUser ? (
+              <div className="flex items-center gap-3">
+                <div className="hidden lg:block text-right">
+                  <div className="text-xs font-bold text-slate-900 leading-tight">
+                    {currentUser.displayName}
+                  </div>
+                  <div className="text-[11px] text-slate-500 leading-tight">
+                    {currentUser.position} ·{' '}
+                    <strong className="text-blue-700">
+                      {currentUser.role === 'branch' ? currentUser.branchCode : 'Холдинг'}
+                    </strong>
+                  </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={handleLogout}
-                  className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-slate-200 bg-white/10 hover:bg-red-600/80 hover:text-white border border-white/15 transition-colors cursor-pointer flex items-center gap-1"
-                  title={`Выйти из учётной записи (${currentUser.username})`}
+                  onClick={() => {
+                    if (window.openReferencesModal) window.openReferencesModal();
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                  title="Справочники АРС"
                 >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Выйти</span>
+                  <span>⚙️ Справочники</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.openAuditLogModal) window.openAuditLogModal();
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                  title="Журнал аудита действий"
+                >
+                  <span>📋 Аудит</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="inline-flex items-center gap-1 p-1.5 text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                  title="Сменить учётную запись / Выход"
+                >
+                  <LogOut className="w-4 h-4" />
                 </button>
               </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsLoginModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                Войти в систему
+              </button>
             )}
           </div>
         </div>
       </header>
 
-      {/* Main Content Container */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-6 py-5 space-y-5">
-        {/* 2 & 3. Заголовок «Ситуационный центр ремонта грузовых вагонов» + 6 KPI-карточек в один ряд */}
-        <div className="kpi-banner-container" id="bannerKpi">
-          {/* Шапка ситуационного центра */}
-          <div className="kpi-banner-header flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="kpi-main-title" id="kpiMainTitle">
-                {isBranchUser
-                  ? `Ситуационный центр ремонта грузовых вагонов — ${currentKpi.label}`
-                  : 'Ситуационный центр ремонта грузовых вагонов'}
-              </h1>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="kpi-badge kpi-badge-depot" id="kpiDepotBadge">
-                  {currentKpi.label}
-                </span>
-                <span className="kpi-badge kpi-badge-status" id="kpiStatusBadge">
-                  {isBranchUser ? 'Контур филиала' : 'Производственный отдел'}
-                </span>
-                <span className="sr-only" id="kpiCodeBadge">
-                  Депо: {activeDepotKey}
-                </span>
-              </div>
-            </div>
+      {/* Main Viewport */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {currentUser ? (
+          <>
+            {activeModuleId === 'executive' && (
+              <ExecutiveDashboard
+                data={dataset}
+                currentUser={currentUser}
+                onNavigateToProduction={handleNavigateToProduction}
+                onSelectModule={handleSelectModule}
+              />
+            )}
 
-            <div className="flex items-center gap-2">
-              {/* Интерактивный выбор даты справа в заголовке */}
+            {activeModuleId === 'production' && (
+              <ProductionModule
+                data={dataset}
+                references={references}
+                currentUser={currentUser}
+                initialTab={productionTab}
+                initialDepotFilter={productionDepotFilter}
+                onUpdateReferences={handleUpdateReferences}
+              />
+            )}
+
+            {!['executive', 'production'].includes(activeModuleId) && (
+              <div className="bg-white border border-slate-200 rounded-xl p-8 max-w-3xl mx-auto text-center space-y-4">
+                <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center mx-auto">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <div className="inline-block px-2.5 py-0.5 rounded text-[11px] font-bold bg-purple-100 text-purple-800 uppercase tracking-wider">
+                  План масштабирования · {activeModuleMeta.roadmapQuarter || '2027'}
+                </div>
+                <h2 className="text-xl font-bold text-slate-900">{activeModuleMeta.title}</h2>
+                <p className="text-xs text-slate-500 max-w-xl mx-auto leading-relaxed">
+                  {activeModuleMeta.description}
+                </p>
+
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-left text-xs text-slate-700 space-y-2 mt-4 max-w-lg mx-auto">
+                  <div className="font-bold text-slate-900">Архитектурная спецификация модуля:</div>
+                  <div>• <strong>Подразделение:</strong> {activeModuleMeta.departmentName}</div>
+                  <div>• <strong>Статус реализации:</strong> {activeModuleMeta.roadmapSummary || 'Проектирование схемы данных'}</div>
+                  <div>• <strong>Изоляция:</strong> Автономная бизнес-логика с подключением к единому RBAC и аудиту</div>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectModule('production')}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <span>Вернуться в Производственный отдел</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex items-center justify-center py-24">
+            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center max-w-md shadow-sm">
+              <Lock className="w-8 h-8 text-blue-600 mx-auto mb-3" />
+              <h2 className="text-base font-bold text-slate-900 mb-1">
+                Требуется авторизация в платформе АРС
+              </h2>
+              <p className="text-xs text-slate-500 mb-4">
+                Пожалуйста, выберите учётную запись для входа в ваше рабочее пространство.
+              </p>
               <button
                 type="button"
-                id="headerDateSelectorBtn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (activeTab !== 'daily') {
-                    setActiveTab('daily');
-                    setTimeout(() => window.toggleCalendarPopover?.(e), 50);
-                  } else {
-                    window.toggleCalendarPopover?.(e);
-                  }
-                }}
-                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-300 hover:border-blue-400 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
-                title="Открыть календарь выбора даты или периода"
+                onClick={() => setIsLoginModalOpen(true)}
+                className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               >
-                <span>📅</span>
-                <span id="headerDateLabelText">{headerDateText}</span>
-                <span className="text-[10px] text-slate-500">▾</span>
+                Открыть окно авторизации
               </button>
             </div>
           </div>
-
-          {/* 3. 6 KPI-карточек в один ряд */}
-          <div className="kpi-grid">
-            {/* Карточка 1: План на месяц: 690 ваг. (прогресс-бар, «Выполнение плана: 64,9%») */}
-            <div className="kpi-card">
-              <div className="kpi-card-label">План на месяц</div>
-              <div className="kpi-card-value">
-                <span id="kpiValPlan">{currentKpi.plan}</span>
-                <span className="kpi-unit">ваг.</span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden my-1.5">
-                <div
-                  id="kpiPlanProgressBar"
-                  className="h-full bg-[#2563EB] rounded-full transition-all duration-300"
-                  style={{ width: `${currentKpi.planPctNum}%` }}
-                />
-              </div>
-              <div className="kpi-card-sub" id="kpiSubPlan">
-                {currentKpi.planSub}
-              </div>
-            </div>
-
-            {/* Карточка 2: Факт за месяц: 448 ваг. (зелёный бейдж 64,9%, «к плану 690 ваг.») */}
-            <div className="kpi-card">
-              <div className="kpi-card-label">Факт за месяц</div>
-              <div className="kpi-card-value">
-                <span id="kpiValFact">{currentKpi.fact}</span>
-                <span className="kpi-unit">ваг.</span>
-                <span
-                  id="kpiFactPercent"
-                  className="ml-1.5 px-1.5 py-0.5 text-[11px] font-extrabold rounded bg-emerald-100 text-emerald-800 border border-emerald-200"
-                >
-                  {currentKpi.pct}
-                </span>
-              </div>
-              <div className="kpi-card-sub" id="kpiSubFact">
-                {currentKpi.factSub}
-              </div>
-            </div>
-
-            {/* Карточка 3: Отклонение: -242 ваг. (красный жирный #DC2626, «План: 690 | Факт: 448») */}
-            <div className="kpi-card">
-              <div className="kpi-card-label">Отклонение</div>
-              <div className="kpi-card-value" style={{ color: '#DC2626', fontWeight: 800 }}>
-                <span id="kpiValDev">{currentKpi.variance}</span>
-                <span className="kpi-unit" style={{ color: '#DC2626' }}>
-                  ваг.
-                </span>
-              </div>
-              <div className="kpi-card-sub" id="kpiSubDev">
-                {currentKpi.varSub}
-              </div>
-            </div>
-
-            {/* Карточка 4: Парк КТТ / собственный: 223 / 161 ваг. («КТТ: 223 | Собственный: 161») */}
-            <div className="kpi-card">
-              <div className="kpi-card-label">Парк КТТ / собственный</div>
-              <div className="kpi-card-value">
-                <span id="kpiValKTT">{currentKpi.ktt}</span>
-                <span className="kpi-divider">/</span>
-                <span id="kpiValOwn">{currentKpi.own}</span>
-                <span className="kpi-unit">ваг.</span>
-              </div>
-              <div className="kpi-card-sub" id="kpiSubPark">
-                {currentKpi.parkSub}
-              </div>
-            </div>
-
-            {/* Карточка 5: Незавершённый ремонт: 21 ваг. (янтарный #D97706, «Требует внимания») */}
-            <div className="kpi-card">
-              <div className="kpi-card-label">Незавершённый ремонт</div>
-              <div className="kpi-card-value" style={{ color: '#D97706', fontWeight: 800 }}>
-                <span id="kpiValUnfinished">{currentKpi.unfinished}</span>
-                <span className="kpi-unit" style={{ color: '#D97706' }}>
-                  ваг.
-                </span>
-              </div>
-              <div
-                className="kpi-card-sub"
-                id="kpiSubUnfinished"
-                style={{ color: '#B45309', fontWeight: 700 }}
-              >
-                {currentKpi.unfinishedSub}
-              </div>
-            </div>
-
-            {/* Карточка 6: Выпуск с начала года: 5 058 ваг. (зелёный #16A34A, «План: 4 100 | +958») */}
-            <div className="kpi-card">
-              <div className="kpi-card-label">Выпуск с начала года</div>
-              <div className="kpi-card-value" style={{ color: '#16A34A', fontWeight: 800 }}>
-                <span id="kpiValYear">{currentKpi.ytd}</span>
-                <span className="kpi-unit" style={{ color: '#16A34A' }}>
-                  ваг.
-                </span>
-              </div>
-              <div
-                className="kpi-card-sub"
-                id="kpiSubYear"
-                style={{ color: '#15803D', fontWeight: 700 }}
-              >
-                {currentKpi.ytdSub}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Active View Content */}
-        {loadingData || !effectiveData ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-12 text-center space-y-3">
-            <div className="text-sm font-semibold text-slate-700">
-              Загрузка производственной базы данных ТОО «Astana Railway Services» за 2026 год...
-            </div>
-            <div className="text-xs text-slate-400 font-mono">
-              Инициализация сводных таблиц БВРД, АВРД, КВРД, УВРД
-            </div>
-          </div>
-        ) : (
-          <>
-            {activeTab === 'analyst' && (
-              <AnalystWorkspace
-                data={effectiveData}
-                currentUser={currentUser}
-                messages={messages}
-                isLoading={isQuerying}
-                onSendPrompt={handleSendPrompt}
-                onResetChat={handleResetChat}
-                selectedWagonNumber={selectedWagonNumber}
-                onSelectWagonNumber={setSelectedWagonNumber}
-              />
-            )}
-
-            {activeTab === 'plans' && (
-              <PlanSummaryView data={effectiveData} onAskAnalyst={handleSendPrompt} />
-            )}
-
-            {activeTab === 'dislocation' && (
-              <DislocationView
-                data={effectiveData}
-                onAskAnalyst={handleSendPrompt}
-                onInspectWagon={handleInspectWagon}
-              />
-            )}
-
-            {activeTab === 'wheelsets' && (
-              <WheelPairsView data={effectiveData} onAskAnalyst={handleSendPrompt} />
-            )}
-
-            {activeTab === 'daily' && (
-              <DailyOutputView
-                data={effectiveData}
-                references={references}
-                currentUser={currentUser}
-                onAskAnalyst={handleSendPrompt}
-              />
-            )}
-          </>
         )}
       </main>
 
-      {/* Quiet Footer */}
-      <footer className="bg-white border-t border-slate-200 mt-12">
-        <div className="max-w-[1440px] mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
-          <div>
-            ТОО «Astana Railway Services» (АРС) · Производственно-технический отдел · Данные за 2026 год
-          </div>
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={() => window.openAuditLogModal?.('devlog')}
-              className="hover:text-slate-900 cursor-pointer"
-            >
-              📜 Журнал системы (🐞 Flight Recorder)
-            </button>
-            <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              onClick={() => window.openReferencesModal?.()}
-              className="hover:text-slate-900 cursor-pointer"
-            >
-              ⚙️ Справочники ({references.customers.length + references.wagonTypes.length + references.sections.length + references.depots.length})
-            </button>
-            <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              onClick={() => setActiveTab('daily')}
-              className="hover:text-slate-900 cursor-pointer"
-            >
-              Суточный выпуск
-            </button>
-            <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              onClick={() => setActiveTab('analyst')}
-              className="hover:text-slate-900 cursor-pointer"
-            >
-              ИИ-Аналитик
-            </button>
-            {currentUser && (
-              <>
-                <span aria-hidden="true">·</span>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="text-red-700 hover:underline cursor-pointer"
-                >
-                  Сменить пользователя ({currentUser.username})
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </footer>
-
-      {/* Модальное окно справочников (рендерится в конце <body> через Portal) */}
+      {/* Global Modals */}
       <ReferencesModal
         references={references}
         onUpdateReferences={handleUpdateReferences}
         currentUser={currentUser}
       />
 
-      {/* Модальное окно журнала системы и Чёрного ящика разработчика (#modalAuditLog через Portal) */}
       <AuditLogModal
         currentUser={currentUser}
         references={references}
       />
 
-      {/* Модальное окно входа (#modalLogin в конце <body> через Portal) */}
       <LoginModal
-        isOpen={!currentUser}
+        isOpen={isLoginModalOpen || !currentUser}
         references={references}
         onLoginSuccess={handleLoginSuccess}
       />
 
-      {/* Плавающая кнопка-стрелка «Наверх» при скроллинге */}
-      <button
-        type="button"
-        id="btnScrollToTop"
-        onClick={handleScrollToTop}
-        className={`ars-scroll-top-btn ${showScrollTop ? 'visible' : ''}`}
-        title="Наверх"
-        aria-label="Наверх"
-      >
-        <span className="ars-scroll-top-tooltip" role="tooltip">
-          Наверх
-        </span>
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#FFFFFF"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
+      {/* Floating Scroll-to-Top Button */}
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={handleScrollToTop}
+          className="fixed bottom-6 right-6 p-2.5 rounded-full bg-slate-900 text-white shadow-lg hover:bg-slate-800 transition-all cursor-pointer z-30"
+          title="Наверх"
+          aria-label="Наверх"
         >
-          <path d="M12 19V5" />
-          <path d="m5 12 7-7 7 7" />
-        </svg>
-      </button>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 19V5" />
+            <path d="m5 12 7-7 7 7" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

@@ -1,82 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Lock, User, ShieldCheck, Building2, AlertCircle, KeyRound } from 'lucide-react';
-import { ArsAuthSession, ArsReferences, ArsUserAccount } from '../types/ars';
-
-export const ARS_USERS: Record<string, ArsUserAccount> = {
-  // Головной офис (полный доступ)
-  astana: {
-    password: 'ars2026',
-    role: 'headquarters',
-    depot_code: 'ALL',
-    display_name: 'Головной офис АРС (Астана)',
-  },
-  admin: {
-    password: 'admin2026',
-    role: 'headquarters',
-    depot_code: 'ALL',
-    display_name: 'Администратор холдинга АРС',
-  },
-
-  // Мастера филиалов (строго изолированный контур своего депо)
-  kushmurun: {
-    password: 'kush2026',
-    role: 'branch',
-    depot_code: 'KVRD',
-    display_name: 'Кушмурунское ВРД (КВРД)',
-  },
-  arys: {
-    password: 'arys2026',
-    role: 'branch',
-    depot_code: 'AVRD',
-    display_name: 'Арысское ВРД (АВРД)',
-  },
-  balkhash: {
-    password: 'balkh2026',
-    role: 'branch',
-    depot_code: 'BVRD',
-    display_name: 'Балхашское ВРД (БВРД)',
-  },
-  uralsk: {
-    password: 'ural2026',
-    role: 'branch',
-    depot_code: 'UVRD',
-    display_name: 'Уральское ВРД (УВРД)',
-  },
-};
-
-export function buildEffectiveArsUsers(
-  references: ArsReferences
-): Record<string, ArsUserAccount> {
-  const combined: Record<string, ArsUserAccount> = { ...ARS_USERS };
-
-  // Новые депо, добавленные через справочник, автоматически получают логин [код_депо_в_нижнем_регистре] и пароль [код]2026
-  const existingDepotCodes = new Set(
-    Object.values(ARS_USERS).map((u) => u.depot_code.toUpperCase())
-  );
-
-  for (const dep of references.depots) {
-    const upperCode = dep.code.trim().toUpperCase();
-    const lowerCode = dep.code.trim().toLowerCase();
-    if (!lowerCode) continue;
-
-    if (!existingDepotCodes.has(upperCode) && !combined[lowerCode]) {
-      combined[lowerCode] = {
-        password: `${lowerCode}2026`,
-        role: 'branch',
-        depot_code: upperCode,
-        display_name: dep.name || `Филиал ${upperCode}`,
-      };
-    }
-  }
-
-  return combined;
-}
+import { Lock, User, ShieldCheck, Building2, AlertCircle, KeyRound, Wrench, Layers } from 'lucide-react';
+import { ArsReferences } from '../types/ars';
+import { PlatformUserSession } from '../types/platform';
+import { buildEffectivePlatformUsers, PLATFORM_ACCOUNTS } from '../core/auth/accounts';
 
 interface LoginModalProps {
   isOpen: boolean;
   references: ArsReferences;
-  onLoginSuccess: (session: ArsAuthSession) => void;
+  onLoginSuccess: (session: PlatformUserSession) => void;
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({
@@ -88,7 +20,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [password, setPassword] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const effectiveUsers = buildEffectiveArsUsers(references);
+  const effectiveUsers = buildEffectivePlatformUsers(references);
 
   const performLogin = useCallback(
     (loginStr?: string, passStr?: string) => {
@@ -122,9 +54,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       setErrorMsg(null);
       onLoginSuccess({
         username: rawUser,
+        displayName: account.displayName,
+        department: account.department,
+        departmentName: account.departmentName,
+        position: account.position,
+        branchCode: account.branchCode,
         role: account.role,
-        depot_code: account.depot_code,
-        display_name: account.display_name,
+        dataScope: account.dataScope,
+        permissions: account.permissions,
+        availableModules: account.availableModules,
+        depot_code: account.branchCode,
+        display_name: account.displayName,
       });
     },
     [effectiveUsers, username, password, onLoginSuccess]
@@ -141,77 +81,84 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   }, []);
 
   useEffect(() => {
-    window.ARS_USERS = effectiveUsers;
     window.handleLogin = () => performLogin();
     window.fillLoginCredentials = fillLoginCredentials;
-  }, [effectiveUsers, performLogin, fillLoginCredentials]);
+  }, [performLogin, fillLoginCredentials]);
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    performLogin(username, password);
+    performLogin();
   };
 
-  const hqEntries = Object.entries(effectiveUsers).filter(
-    ([, acc]) => acc.role === 'headquarters'
+  if (!isOpen) return null;
+
+  // Split into 4 logical groups for RBAC demo
+  const managementEntries = Object.entries(effectiveUsers).filter(
+    ([, a]) => a.department === 'management'
+  );
+  const productionHQEntries = Object.entries(effectiveUsers).filter(
+    ([, a]) => a.department === 'production' && a.branchCode === 'ALL'
   );
   const branchEntries = Object.entries(effectiveUsers).filter(
-    ([, acc]) => acc.role === 'branch'
+    ([, a]) => a.role === 'branch'
+  );
+  const otherDeptEntries = Object.entries(effectiveUsers).filter(
+    ([, a]) => a.department !== 'management' && a.department !== 'production'
   );
 
   const modalNode = (
     <div
-      id="modalLogin"
       className="modal-backdrop"
       style={{
-        display: isOpen ? 'flex' : 'none',
-        zIndex: 60,
-        backgroundColor: 'rgba(15, 23, 42, 0.72)',
-        backdropFilter: 'blur(4px)',
+        zIndex: 1000,
+        backgroundColor: 'rgba(15, 23, 42, 0.7)',
+        backdropFilter: 'blur(3px)',
       }}
     >
       <div
         className="modal-card"
         style={{
-          maxWidth: '680px',
-          width: '100%',
-          border: '1px solid #CBD5E1',
-          borderRadius: '14px',
+          maxWidth: '820px',
+          width: '95%',
+          boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)',
+          maxHeight: '92vh',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        {/* Заголовок окна авторизации */}
+        {/* Header */}
         <div
           className="modal-header"
           style={{
-            background: '#1B365D',
+            background: '#0F172A',
             color: '#FFFFFF',
-            padding: '18px 24px',
-            borderBottom: '1px solid #0F223D',
+            borderBottom: '1px solid #1E293B',
+            padding: '16px 24px',
           }}
         >
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-              <Lock className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0">
+              <Lock className="w-4 h-4" />
             </div>
             <div>
-              <div
-                className="modal-title"
-                style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}
-              >
-                ТОО "Astana Railway Services" | Авторизация в системе
+              <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                ТОО «Astana Railway Services» · 2026
               </div>
-              <div className="text-xs text-slate-200 mt-0.5">
-                Единый контур управления суточной справкой и ролевой изоляции филиалов (RBAC · 2026)
-              </div>
+              <h2 className="text-base font-bold text-white tracking-tight">
+                Авторизация в Единой корпоративной цифровой платформе ARS
+              </h2>
             </div>
           </div>
         </div>
 
-        {/* Тело модального окна входа */}
-        <div className="modal-body" style={{ padding: '24px' }}>
+        {/* Body */}
+        <div className="modal-body overflow-y-auto" style={{ padding: '24px' }}>
           <form onSubmit={handleFormSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="ref-form-group">
-                <label htmlFor="loginUsernameInput">Логин пользователя:</label>
+                <label htmlFor="loginUsernameInput" className="text-xs font-semibold text-slate-700 block mb-1">
+                  Логин пользователя:
+                </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
@@ -222,16 +169,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       setUsername(e.target.value);
                       if (errorMsg) setErrorMsg(null);
                     }}
-                    placeholder="Например: astana или kushmurun"
+                    placeholder="Например: director или astana"
                     autoComplete="username"
-                    style={{ paddingLeft: '34px', height: '38px', fontSize: '13px' }}
-                    className="font-mono"
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:outline-none rounded-lg text-slate-900 font-mono"
                   />
                 </div>
               </div>
 
               <div className="ref-form-group">
-                <label htmlFor="loginPasswordInput">Пароль:</label>
+                <label htmlFor="loginPasswordInput" className="text-xs font-semibold text-slate-700 block mb-1">
+                  Пароль:
+                </label>
                 <div className="relative">
                   <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
@@ -244,8 +192,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     }}
                     placeholder="Введите пароль..."
                     autoComplete="current-password"
-                    style={{ paddingLeft: '34px', height: '38px', fontSize: '13px' }}
-                    className="font-mono"
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:outline-none rounded-lg text-slate-900 font-mono"
                   />
                 </div>
               </div>
@@ -260,43 +207,43 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
             <div className="flex items-center justify-between gap-4 pt-1">
               <div className="text-xs text-slate-500">
-                Нажмите на любую тестовую учётную запись ниже для мгновенного автозаполнения
+                Выберите тестовую должность ниже для мгновенного входа в соответствующее рабочее пространство
               </div>
               <button
                 id="loginSubmitBtn"
                 type="submit"
                 className="btn btn-primary"
                 style={{
-                  background: '#1B365D',
-                  borderColor: '#1B365D',
+                  background: '#0F172A',
+                  borderColor: '#0F172A',
                   padding: '9px 22px',
                   fontSize: '13px',
                 }}
               >
-                Войти в систему
+                Войти в платформу
               </button>
             </div>
           </form>
 
-          {/* Интерактивная подсказка с тестовыми аккаунтами */}
+          {/* Extended RBAC Accounts Matrix */}
           <div className="mt-6 pt-5 border-t border-slate-200 space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Тестовые учётные записи для проверки ролей (клик автозаполняет поля)
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Матрица ролевого доступа RBAC по подразделениям и должностям
               </span>
               <span className="text-[11px] font-mono text-slate-400">
-                Всего аккаунтов: {Object.keys(effectiveUsers).length}
+                Всего профилей: {Object.keys(effectiveUsers).length}
               </span>
             </div>
 
-            {/* Группа 1: Головной офис */}
+            {/* Group 1: Высшее руководство */}
             <div className="space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-[#1B365D]">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Головной офис (полный доступ ко всем филиалам — ALL):</span>
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                <span>1. Высшее руководство холдинга (Executive Dashboard + полный доступ):</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {hqEntries.map(([loginKey, acc]) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {managementEntries.map(([loginKey, acc]) => {
                   const isSelected = username === loginKey && password === acc.password;
                   return (
                     <div
@@ -305,16 +252,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between gap-2 ${
                         isSelected
                           ? 'bg-blue-50/80 border-blue-600 ring-1 ring-blue-600/30'
-                          : 'bg-slate-50/80 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
                       }`}
                     >
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-slate-900 truncate">
-                          {acc.display_name}
+                          {acc.position} · {acc.displayName}
                         </div>
-                        <div className="text-[11px] font-mono text-slate-600 mt-0.5">
-                          логин: <strong className="text-[#1B365D]">{loginKey}</strong> · пароль:{' '}
-                          <strong className="text-slate-900">{acc.password}</strong>
+                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          логин: <strong className="text-blue-700">{loginKey}</strong> · пароль:{' '}
+                          <strong>{acc.password}</strong>
                         </div>
                       </div>
                       <button
@@ -324,8 +271,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                           fillLoginCredentials(loginKey, acc.password);
                           performLogin(loginKey, acc.password);
                         }}
-                        className="px-2 py-1 text-[11px] font-semibold bg-white border border-slate-300 hover:border-[#1B365D] hover:text-[#1B365D] rounded text-slate-700 shrink-0 cursor-pointer"
-                        title="Быстрый вход в 1 клик"
+                        className="px-2 py-1 text-[11px] font-semibold bg-white border border-slate-300 hover:border-slate-900 hover:text-slate-900 rounded text-slate-700 shrink-0 cursor-pointer"
                       >
                         Вход →
                       </button>
@@ -335,13 +281,58 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               </div>
             </div>
 
-            {/* Группа 2: Мастера филиалов / Депо */}
+            {/* Group 2: Производственный отдел ЦА */}
             <div className="space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
-                <Building2 className="w-3.5 h-3.5" />
-                <span>Мастера филиалов (строго изолированный контур своего депо):</span>
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <Wrench className="w-3.5 h-3.5 text-indigo-600" />
+                <span>2. Производственный отдел ЦА (ПДО холдинга — вся сеть ВРД):</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {productionHQEntries.map(([loginKey, acc]) => {
+                  const isSelected = username === loginKey && password === acc.password;
+                  return (
+                    <div
+                      key={loginKey}
+                      onClick={() => fillLoginCredentials(loginKey, acc.password)}
+                      className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                        isSelected
+                          ? 'bg-indigo-50/80 border-indigo-600 ring-1 ring-indigo-600/30'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 truncate">
+                          {acc.position} · {acc.displayName}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          логин: <strong className="text-indigo-700">{loginKey}</strong> · пароль:{' '}
+                          <strong>{acc.password}</strong>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fillLoginCredentials(loginKey, acc.password);
+                          performLogin(loginKey, acc.password);
+                        }}
+                        className="px-2 py-1 text-[11px] font-semibold bg-white border border-slate-300 hover:border-indigo-700 hover:text-indigo-800 rounded text-slate-700 shrink-0 cursor-pointer"
+                      >
+                        Вход →
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Group 3: Руководители филиалов ВРД */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>3. Филиалы (изолированный контур своего вагоноремонтного депо):</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {branchEntries.map(([loginKey, acc]) => {
                   const isSelected = username === loginKey && password === acc.password;
                   return (
@@ -351,21 +342,21 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between gap-2 ${
                         isSelected
                           ? 'bg-emerald-50/80 border-emerald-600 ring-1 ring-emerald-600/30'
-                          : 'bg-slate-50/80 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
                       }`}
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900">
-                            {acc.depot_code}
+                            {acc.branchCode}
                           </span>
                           <span className="text-xs font-bold text-slate-900 truncate">
-                            {acc.display_name}
+                            {acc.position}
                           </span>
                         </div>
-                        <div className="text-[11px] font-mono text-slate-600 mt-0.5">
-                          логин: <strong className="text-emerald-800">{loginKey}</strong> · пароль:{' '}
-                          <strong className="text-slate-900">{acc.password}</strong>
+                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          логин: <strong className="text-emerald-700">{loginKey}</strong> · пароль:{' '}
+                          <strong>{acc.password}</strong>
                         </div>
                       </div>
                       <button
@@ -376,7 +367,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                           performLogin(loginKey, acc.password);
                         }}
                         className="px-2 py-1 text-[11px] font-semibold bg-white border border-slate-300 hover:border-emerald-700 hover:text-emerald-800 rounded text-slate-700 shrink-0 cursor-pointer"
-                        title="Быстрый вход в 1 клик"
                       >
                         Вход →
                       </button>
@@ -384,16 +374,52 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   );
                 })}
               </div>
-              <div className="text-[11px] text-slate-500 pt-1">
-                💡 Новые депо, добавленные через «⚙️ Справочники», автоматически получают логин{' '}
-                <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">
-                  [код_депо_в_нижнем_регистре]
-                </code>{' '}
-                и пароль{' '}
-                <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">
-                  [код]2026
-                </code>
-                .
+            </div>
+
+            {/* Group 4: Смежные подразделения платформы (Roadmap RBAC) */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <Layers className="w-3.5 h-3.5 text-purple-600" />
+                <span>4. Смежные подразделения холдинга (масштабирование платформы):</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {otherDeptEntries.map(([loginKey, acc]) => {
+                  const isSelected = username === loginKey && password === acc.password;
+                  return (
+                    <div
+                      key={loginKey}
+                      onClick={() => fillLoginCredentials(loginKey, acc.password)}
+                      className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all flex flex-col justify-between gap-1.5 ${
+                        isSelected
+                          ? 'bg-purple-50/80 border-purple-600 ring-1 ring-purple-600/30'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 truncate">
+                          {acc.position}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {acc.departmentName}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-mono mt-1">
+                          логин: <strong className="text-purple-700">{loginKey}</strong>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fillLoginCredentials(loginKey, acc.password);
+                          performLogin(loginKey, acc.password);
+                        }}
+                        className="w-full py-1 text-[11px] font-semibold bg-white border border-slate-300 hover:border-purple-700 hover:text-purple-800 rounded text-slate-700 cursor-pointer text-center"
+                      >
+                        Войти
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
